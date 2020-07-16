@@ -9,12 +9,12 @@ pub const MapDef = struct {
     max_entries: u32,
 };
 
-pub usingnamespace helpers.ktime_get_ns;
-pub usingnamespace helpers.get_prandom_u32;
-pub usingnamespace helpers.get_smp_processor_id;
-pub usingnamespace helpers.get_current_pid_tgid;
-pub usingnamespace helpers.get_current_uid_gid;
-pub usingnamespace helpers.get_cgroup_classid;
+pub const ktime_get_ns = helpers.ktime_get_ns;
+pub const get_prandom_u32 = helpers.get_prandom_u32;
+pub const get_smp_processor_id = helpers.get_smp_processor_id;
+pub const get_current_pid_tgid = helpers.get_current_pid_tgid;
+pub const get_current_uid_gid = helpers.get_current_uid_gid;
+pub const get_cgroup_classid = helpers.get_cgroup_classid;
 
 pub fn trace_printk(comptime fmt: []const u8, args: []u64) !u32 {
     const rc = switch (args.len) {
@@ -32,7 +32,7 @@ pub fn trace_printk(comptime fmt: []const u8, args: []u64) !u32 {
     };
 }
 
-pub const PerfEventArray = Map(u32, u32, .PerfEventArray, 0);
+pub const PerfEventArray = Map(u32, u32, .perf_event_array, 0);
 
 pub fn Map(comptime Key: type, comptime Value: type, map_type: MapType, entries: u32) type {
     return struct {
