@@ -56,7 +56,7 @@ pub fn Map(comptime Key: type, comptime Value: type, map_type: MapType, entries:
         }
 
         pub fn update(self: *const Self, key: *const Key, value: *const Value, flags: UpdateFlags) !void {
-            switch (helpers.map_update_elem(&self.base, key, value, flags)) {
+            switch (helpers.map_update_elem(&self.base, key, value, @enumToInt(flags))) {
                 0 => return,
                 else => return error.UnknownError,
             }
@@ -118,7 +118,7 @@ pub fn clone_redirect(skb: *SkBuff, ifindex: u32, flags: u64) !void {
 }
 
 pub fn get_current_comm(buf: []u8) !void {
-    switch (helpers.get_current_comm(buf.ptr, buf.len)) {
+    switch (helpers.get_current_comm(buf.ptr, @truncate(u32, buf.len))) {
         0 => return,
         else => return error.UnknownError,
     }

@@ -35,6 +35,12 @@ pub const Cmd = enum(i32) {
     map_lookup_and_delete_batch,
     map_update_batch,
     map_delete_batch,
+    link_create,
+    link_update,
+    link_get_fd_by_id,
+    link_get_next_id,
+    enable_stats,
+    iter_create,
 };
 
 pub const ProgType = enum(u32) {
@@ -67,44 +73,45 @@ pub const ProgType = enum(u32) {
     tracing,
     struct_ops,
     ext,
+    lsm,
 };
 
 pub const AttachType = enum(u32) {
-    CGroupInetIngress,
-    CGroupInetEgress,
-    CGroupInetSockCreate,
-    CGroupSockOps,
-    SkSkbStreamParser,
-    SkSkbStreamVerdict,
-    CGroupDevice,
-    SkMsgVerdict,
-    CGroupInet4Bind,
-    CGroupInet6Bind,
-    CGroupInet4Connect,
-    CGroupInet6Connect,
-    CGroupInet4PostBind,
-    CGroupInet6PostBind,
-    CGroupUdp4SendMsg,
-    CGroupUdp6SendMsg,
-    LircMode2,
-    FlowDissector,
-    CGroupSysctl,
-    CGroupUdp4RecvMsg,
-    CGroupUdp6RecvMsg,
-    CGroupGetSockOpt,
-    CGroupSetSockOpt,
-    RawTp,
-    FEntry,
-    FExit,
-    ModifyReturn,
-    LsmMac,
-    TraceIter,
-    CGroupInet4GetPeerName,
-    CGroupInet6GetPeerName,
-    CGroupInet4GetSockName,
-    CGroupInet6GetSockName,
-    XdpDevMap,
-    CGroupInetSockRelease,
+    cgroup_inet_ingress,
+    cgroup_inet_egress,
+    cgroup_inet_sock_create,
+    cgroup_sock_ops,
+    sk_skb_stream_parser,
+    sk_skb_stream_verdict,
+    cgroup_device,
+    sk_msg_verdict,
+    cgroup_inet4_bind,
+    cgroup_inet6_bind,
+    cgroup_inet4_connect,
+    cgroup_inet6_connect,
+    cgroup_inet4_post_bind,
+    cgroup_inet6_post_bind,
+    cgroup_udp4_sendmsg,
+    cgroup_udp6_sendmsg,
+    lirc_mode2,
+    flow_dissector,
+    cgroup_sysctl,
+    cgroup_udp4_recvmsg,
+    cgroup_udp6_recvmsg,
+    cgroup_getsockopt,
+    cgroup_setsockopt,
+    trace_raw_tp,
+    trace_fentry,
+    trace_fexit,
+    modify_return,
+    lsm_mac,
+    trace_iter,
+    cgroup_inet4_getpeername,
+    cgroup_inet6_getpeername,
+    cgroup_inet4_getsockname,
+    cgroup_inet6_getsockname,
+    xdp_devmap,
+    cgroup_inet_sock_release,
 };
 
 const tag_size = 8;
@@ -515,7 +522,20 @@ pub fn link_get_next_id() void {}
 pub fn enable_stats() void {}
 pub fn iter_create() void {}
 
-fn determine_tracepoint_id() void {}
+fn determine_tracepoint_id(category: []const u8, name: []const u8) !void {
+    var buf: [PATH_MAX]u8 = undefined;
+
+    try std.fmt.bufPrint(&buf, "/sys/kernel/debug/tracing/events/{}/{}/id", .{
+        category, name,
+    });
+
+    const file = std.fs.File{
+        .handle = try std.os.open(buf, 0, 0),
+    };
+    defer file.close();
+
+    // read line from file
+}
 
 fn to_upper_literal(comptime str: []const u8) *const [str.len]u8 {
     comptime {

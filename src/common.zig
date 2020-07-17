@@ -72,6 +72,7 @@ pub const MapType = enum(u32) {
     sk_storage,
     devmap_hash,
     struct_ops,
+    ringbuf,
 };
 
 // zig representation of struct bpf_fib_lookup;
