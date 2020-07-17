@@ -52,7 +52,7 @@ pub fn Map(comptime Key: type, comptime Value: type, map_type: MapType, entries:
         }
 
         pub fn lookup(self: *const Self, key: *const Key) ?*Value {
-            return helpers.map_lookup_elem(&self.base, key);
+            return helpers.map_lookup_elem(@ptrCast(*const c_void, &self.base), key);
         }
 
         pub fn update(self: *const Self, key: *const Key, value: *const Value, flags: UpdateFlags) !void {
