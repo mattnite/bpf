@@ -1,8 +1,8 @@
 usingnamespace @import("common.zig");
 
-pub const map_lookup_elem = @intToPtr(fn (map: ?*c_void, key: ?*const c_void) ?*c_void, 1);
-pub const map_update_elem = @intToPtr(fn (map: ?*c_void, key: ?*const c_void, value: ?*const c_void, flags: u64) c_int, 2);
-pub const map_delete_elem = @intToPtr(fn (map: ?*c_void, key: ?*const c_void) c_int, 3);
+pub const map_lookup_elem = @intToPtr(fn (map: ?*const c_void, key: ?*const c_void) ?*c_void, 1);
+pub const map_update_elem = @intToPtr(fn (map: ?*const c_void, key: ?*const c_void, value: ?*const c_void, flags: u64) c_int, 2);
+pub const map_delete_elem = @intToPtr(fn (map: ?*const c_void, key: ?*const c_void) c_int, 3);
 pub const probe_read = @intToPtr(fn (dst: ?*c_void, size: u32, unsafe_ptr: ?*const c_void) c_int, 4);
 pub const ktime_get_ns = @intToPtr(fn () u64, 5);
 pub const trace_printk = @intToPtr(fn (fmt: [*]const u8, fmt_size: u32, arg1: u64, arg2: u64, arg3: u64) c_int, 6);
@@ -89,9 +89,9 @@ pub const skb_ancestor_cgroup_id = @intToPtr(fn (skb: *SkBuff, ancestor_level: c
 pub const sk_lookup_tcp = @intToPtr(fn (ctx: ?*c_void, tuple: *SockTuple, tuple_size: u32, netns: u64, flags: u64) ?*Sock, 84);
 pub const sk_lookup_udp = @intToPtr(fn (ctx: ?*c_void, tuple: *SockTuple, tuple_size: u32, netns: u64, flags: u64) ?*Sock, 85);
 pub const sk_release = @intToPtr(fn (sock: *Sock) c_int, 86);
-pub const map_push_elem = @intToPtr(fn (map: ?*c_void, value: ?*const c_void, flags: u64) c_int, 87);
-pub const map_pop_elem = @intToPtr(fn (map: ?*c_void, value: ?*c_void) c_int, 88);
-pub const map_peek_elem = @intToPtr(fn (map: ?*c_void, value: ?*c_void) c_int, 89);
+pub const map_push_elem = @intToPtr(fn (map: ?*const c_void, value: ?*const c_void, flags: u64) c_int, 87);
+pub const map_pop_elem = @intToPtr(fn (map: ?*const c_void, value: ?*c_void) c_int, 88);
+pub const map_peek_elem = @intToPtr(fn (map: ?*const c_void, value: ?*c_void) c_int, 89);
 pub const msg_push_data = @intToPtr(fn (msg: *SkMsgMd, start: u32, len: u32, flags: u64) c_int, 90);
 pub const msg_pop_data = @intToPtr(fn (msg: *SkMsgMd, start: u32, len: u32, flags: u64) c_int, 91);
 pub const rc_pointer_rel = @intToPtr(fn (ctx: ?*c_void, rel_x: i32, rel_y: i32) c_int, 92);
