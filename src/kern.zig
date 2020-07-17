@@ -1,6 +1,7 @@
 pub usingnamespace @import("common.zig");
 pub const helpers = @import("helpers.zig");
 const std = @import("std");
+const assert = std.debug.assert;
 
 pub const MapDef = struct {
     map_type: MapType,
@@ -32,6 +33,10 @@ pub fn trace_printk(comptime fmt: []const u8, args: []u64) !u32 {
     };
 }
 
+// TODO: add
+//  - perf_event_output
+//  - perf_event_read
+//  to methods
 pub const PerfEventArray = Map(u32, u32, .perf_event_array, 0);
 
 pub fn Map(comptime Key: type, comptime Value: type, map_type: MapType, entries: u32) type {
@@ -52,10 +57,10 @@ pub fn Map(comptime Key: type, comptime Value: type, map_type: MapType, entries:
         }
 
         pub fn lookup(self: *const Self, key: *const Key) ?*Value {
-            return @ptrCast(?*Value, helpers.map_lookup_elem(&self.base, key));
+            return @ptrCast(?*Value, @alignCast(@alignOf(?*Value), helpers.map_lookup_elem(&self.base, key)));
         }
 
-        pub fn update(self: *const Self, key: *const Key, value: *const Value, flags: UpdateFlags) !void {
+        pub fn update(self: *const Self, flags: UpdateFlags, key: *const Key, value: *const Value) !void {
             switch (helpers.map_update_elem(&self.base, key, value, @enumToInt(flags))) {
                 0 => return,
                 else => return error.UnknownError,
@@ -82,12 +87,8 @@ pub fn probe_read(comptime T: type, dst: []T, src: []const T) !void {
     }
 }
 
-pub fn probe_read_user_str(comptime T: type, dst: []T, src: []const T) !void {
-    if (dst.len < src.len) {
-        return error.TooBig;
-    }
-
-    switch (helpers.probe_read_user_str(dst.ptr, @truncate(u32, src.len * @sizeOf(T)), src.ptr)) {
+pub fn probe_read_user_str(dst: []u8, src: *const [*:0]u8) !void {
+    switch (helpers.probe_read_user_str(dst.ptr, @truncate(u32, dst.len), @ptrCast(*const c_void, src))) {
         0 => return,
         else => return error.UnknownError,
     }
@@ -170,8 +171,12 @@ pub fn get_route_realm(skb: *SkBuff) ?u32 {
     return if (ret == 0) null else ret;
 }
 
-pub fn perf_event_output(ctx: var, map: var, flags: u64, data: []u8) !void {
-    switch (helpers.perf_event_output(ctx, &map.base, flags, data.ptr, data.len)) {
+const PerfEventOutputFlags = enum(u64) {
+    current_cpu = 0xffffffff,
+};
+
+pub fn perf_event_output(ctx: var, map: *const MapDef, flags: PerfEventOutputFlags, data: []u8) !void {
+    switch (helpers.perf_event_output(ctx, map, @enumToInt(flags), data.ptr, data.len)) {
         0 => return,
         else => return error.UnknownError,
     }

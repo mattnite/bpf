@@ -3,9 +3,9 @@ pub const Reg = enum(u4) {
 };
 
 pub const UpdateFlags = enum(u64) {
-    Any = 0,
-    NoExist = 1,
-    Exist = 2,
+    any = 0,
+    no_exist = 1,
+    exist = 2,
 };
 
 pub const Insn = packed struct {
