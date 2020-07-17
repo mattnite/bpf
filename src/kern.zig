@@ -52,18 +52,18 @@ pub fn Map(comptime Key: type, comptime Value: type, map_type: MapType, entries:
         }
 
         pub fn lookup(self: *const Self, key: *const Key) ?*Value {
-            return helpers.bpf_map_lookup_elem(&self.base, key);
+            return helpers.map_lookup_elem(&self.base, key);
         }
 
         pub fn update(self: *const Self, key: *const Key, value: *const Value, flags: UpdateFlags) !void {
-            switch (helpers.bpf_map_update_elem(&self.base, key, value, flags)) {
+            switch (helpers.map_update_elem(&self.base, key, value, flags)) {
                 0 => return,
                 else => return error.UnknownError,
             }
         }
 
         pub fn delete(self: *const Self, key: *const Key) !void {
-            switch (helpers.bpf_map_delete_elem(&self.base, key)) {
+            switch (helpers.map_delete_elem(&self.base, key)) {
                 0 => return,
                 else => return error.UnknownError,
             }
