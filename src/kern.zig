@@ -73,10 +73,21 @@ pub fn Map(comptime Key: type, comptime Value: type, map_type: MapType, entries:
 
 pub fn probe_read(comptime T: type, dst: []T, src: []const T) !void {
     if (dst.len < src.len) {
-        return error.TooSmall;
+        return error.TooBig;
     }
 
-    switch (helpers.probe_read(dst.ptr, src.len, src.ptr)) {
+    switch (helpers.probe_read(dst.ptr, src.len * @sizeOf(T), src.ptr)) {
+        0 => return,
+        else => return error.UnknownError,
+    }
+}
+
+pub fn probe_read_user_str(comptime T: type, dst: []T, src: []const T) !void {
+    if (dst.len < src.len) {
+        return error.TooBig;
+    }
+
+    switch (helpers.probe_read_user_str(dst.ptr, @truncate(u32, src.len * @sizeOf(T)), src.ptr)) {
         0 => return,
         else => return error.UnknownError,
     }
