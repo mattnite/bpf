@@ -115,7 +115,7 @@ pub fn l4_csum_replace(skb: *SkBuff, offset: u32, from: u64, to: u64, flags: u64
     }
 }
 
-pub fn tail_call(ctx: var, map: *ProgArrayMap, index: u32) !void {
+pub fn tail_call(ctx: anytype, map: *ProgArrayMap, index: u32) !void {
     switch (helpers.tail_call(ctx, map, index)) {
         0 => return,
         else => return error.UnknownError,
@@ -175,7 +175,7 @@ const PerfEventOutputFlags = enum(u64) {
     current_cpu = 0xffffffff,
 };
 
-pub fn perf_event_output(ctx: var, map: *const MapDef, flags: PerfEventOutputFlags, data: []u8) !void {
+pub fn perf_event_output(ctx: anytype, map: *const MapDef, flags: PerfEventOutputFlags, data: []u8) !void {
     switch (helpers.perf_event_output(ctx, map, @enumToInt(flags), data.ptr, data.len)) {
         0 => return,
         else => return error.UnknownError,

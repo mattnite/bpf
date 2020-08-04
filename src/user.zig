@@ -1,5 +1,9 @@
 usingnamespace @import("common.zig");
 usingnamespace std.os;
+
+pub const ComptimeObject = @import("comptime_object.zig");
+pub const RuntimeObject = @import("object.zig");
+
 const builtin = @import("builtin");
 const std = @import("std");
 const syscall3 = std.os.linux.syscall3;
@@ -344,6 +348,11 @@ pub fn map_create(map_type: MapType, key_size: u32, value_size: u32, max_entries
     }
 }
 
+test "map_create" {
+    const map = try bpf.map_create(.Hash, 4, 4, 32);
+    defer std.os.close(map);
+}
+
 pub fn map_lookup_elem(fd: fd_t, key: []const u8, value: []u8) !void {
     var attr = c.bpf_attr{
         .map_elem = MapElemAttr{
@@ -457,6 +466,23 @@ pub fn prog_load(prog_type: ProgType, insns: []const Insn, log: ?*Log, license: 
         EPERM => return error.AccessDenied,
         else => |err| return unexpectedErrno(err),
     }
+}
+
+test "prog_load" {
+    const insns = [_]bpf.Insn{
+        bpf.Insn.load_imm(.r0, 0),
+        bpf.Insn.exit(),
+    };
+
+    var log_buf: [1000]u8 = undefined;
+    log_buf[0] = 0;
+    var log = bpf.Log{
+        .level = 1,
+        .buf = &log_buf,
+    };
+
+    const prog = try bpf.prog_load(.KProbe, &insns, &log, "GPL");
+    defer close(prog);
 }
 
 pub fn obj_pin(fd: fd_t, pathname: []const u8) !void {
