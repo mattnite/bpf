@@ -6,11 +6,12 @@ pub const RuntimeObject = @import("object.zig");
 
 const builtin = @import("builtin");
 const std = @import("std");
+const Map = @import("map.zig");
 const syscall3 = std.os.linux.syscall3;
 const expectEqual = std.testing.expectEqual;
 const expect = std.testing.expect;
 
-pub const Cmd = enum(i32) {
+pub const Cmd = enum(usize) {
     map_create,
     map_lookup_elem,
     map_update_elem,
@@ -312,23 +313,11 @@ pub const Log = struct {
     buf: []u8,
 };
 
-pub fn Hash(comptime Key: type, comptime Value: type) var {
-    return struct {};
+pub fn bpf(cmd: Cmd, attr: *Attr, size: u32) usize {
+    return syscall3(.bpf, @enumToInt(cmd), @ptrToInt(attr), size);
 }
 
-// key size must be 4 bytes, so it is a u32
-pub fn Array(comptime Value: type) var {
-    return struct {};
-}
-
-// key and value size are 4 bytes
-pub const ProgArray = struct {};
-
-pub fn bpf(cmd: i32, attr: *Attr, size: u32) usize {
-    return syscall3(.bpf, @bitCast(usize, @as(isize, cmd)), @ptrToInt(attr), size);
-}
-
-pub fn map_create(map_type: MapType, key_size: u32, value_size: u32, max_entries: u32) !fd_t {
+pub fn map_create(map_type: Map.Type, key_size: u32, value_size: u32, max_entries: u32) !fd_t {
     var attr = Attr{
         .map_create = MapCreateAttr{
             .map_type = @enumToInt(map_type),
@@ -338,7 +327,7 @@ pub fn map_create(map_type: MapType, key_size: u32, value_size: u32, max_entries
         },
     };
 
-    const rc = bpf(@enumToInt(Cmd.MapCreate), &attr, @sizeOf(MapCreateAttr));
+    const rc = bpf(.map_create, &attr, @sizeOf(MapCreateAttr));
     switch (errno(rc)) {
         0 => return @intCast(fd_t, rc),
         EINVAL => return error.MapTypeOrAttrInvalid,
@@ -349,7 +338,7 @@ pub fn map_create(map_type: MapType, key_size: u32, value_size: u32, max_entries
 }
 
 test "map_create" {
-    const map = try bpf.map_create(.Hash, 4, 4, 32);
+    const map = try map_create(.hash, 4, 4, 32);
     defer std.os.close(map);
 }
 
@@ -440,14 +429,20 @@ pub fn map_get_next_key(fd: fd_t, key: []const u8, next_key: []u8) !void {
     }
 }
 
-pub fn prog_load(prog_type: ProgType, insns: []const Insn, log: ?*Log, license: []const u8) !fd_t {
+pub fn prog_load(
+    prog_type: ProgType,
+    insns: []const Insn,
+    log: ?*Log,
+    license: []const u8,
+    kern_version: u32,
+) !fd_t {
     var attr = Attr{
         .prog_load = ProgLoadAttr{
             .prog_type = @enumToInt(prog_type),
             .insns = @ptrToInt(insns.ptr),
             .insn_cnt = @intCast(u32, insns.len),
             .license = @ptrToInt(license.ptr),
-            .kern_version = c.LINUX_VERSION_CODE,
+            .kern_version = kern_version,
         },
     };
 
@@ -457,7 +452,7 @@ pub fn prog_load(prog_type: ProgType, insns: []const Insn, log: ?*Log, license: 
         attr.prog_load.log_level = l.level;
     }
 
-    const rc = bpf(c.BPF_PROG_LOAD, &attr, @sizeOf(ProgLoadAttr));
+    const rc = bpf(.prog_load, &attr, @sizeOf(ProgLoadAttr));
     switch (errno(rc)) {
         0 => return @intCast(fd_t, rc),
         EACCES => return error.UnsafeProgram,
@@ -469,19 +464,23 @@ pub fn prog_load(prog_type: ProgType, insns: []const Insn, log: ?*Log, license: 
 }
 
 test "prog_load" {
-    const insns = [_]bpf.Insn{
-        bpf.Insn.load_imm(.r0, 0),
-        bpf.Insn.exit(),
+    const c = @cImport({
+        @cInclude("linux/version.h");
+    });
+
+    const insns = [_]Insn{
+        Insn.load_imm(.r0, 0),
+        Insn.exit(),
     };
 
     var log_buf: [1000]u8 = undefined;
     log_buf[0] = 0;
-    var log = bpf.Log{
+    var log = Log{
         .level = 1,
         .buf = &log_buf,
     };
 
-    const prog = try bpf.prog_load(.KProbe, &insns, &log, "GPL");
+    const prog = try prog_load(.kprobe, &insns, &log, "GPL", c.LINUX_VERSION_CODE);
     defer close(prog);
 }
 
@@ -561,28 +560,4 @@ fn determine_tracepoint_id(category: []const u8, name: []const u8) !void {
     defer file.close();
 
     // read line from file
-}
-
-fn to_upper_literal(comptime str: []const u8) *const [str.len]u8 {
-    comptime {
-        var tmp: [str.len]u8 = undefined;
-        for (tmp) |*c, i| c.* = std.ascii.toUpper(str[i]);
-        return &tmp;
-    }
-}
-
-fn enum_value_in_c(comptime Enum: type, comptime c: type) bool {
-    comptime {
-        @setEvalBranchQuota(2000);
-        var count = 0;
-        inline for (std.meta.fields(Cmd)) |field| {
-            const enum_literal = "BPF_" ++ to_upper_literal(field.name);
-            if (@hasDecl(c, enum_literal)) {
-                expectEqual(field.value, @field(c, enum_literal));
-                count += 1;
-            }
-        }
-
-        return count > 0;
-    }
 }
