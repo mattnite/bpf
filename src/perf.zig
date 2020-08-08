@@ -1,3 +1,4 @@
+usingnamespace @import("ioctl.zig");
 const std = @import("std");
 const expect = std.testing.expect;
 
@@ -76,6 +77,70 @@ pub fn event_open(attr: *Event.Attr, pid: pid_t, cpu: i32, group_fd: i32, flags:
         0 => return @intCast(fd_t, rc),
         else => return std.os.unexpectedErrno(rc),
     }
+}
+
+const enable = io('$', 0);
+const disable = io('$', 1);
+const set_bpf = iow('$', 8, fd_t);
+
+pub fn event_disable(fd: fd_t) !void {
+    return try ioctl(fd, disable, null);
+}
+
+pub fn event_set_bpf(fd: fd_t, prog_fd: fd_t) !void {
+    return try ioctl(fd, set_bpf, prog_fd);
+}
+
+pub fn event_enable(fd: fd_t) !void {
+    return try ioctl(fd, enable, null);
+}
+
+pub fn event_open_probe(
+    uprobe: bool,
+    retprobe: bool,
+    name: []const u8,
+    offset: u64,
+    pid: pid_t,
+) !fd_t {
+    const type = if (uprobe)
+        try determine_uprobe_perf_type()
+    else
+        try determine_kprobe_perf_type();
+
+    if (retprobe) {
+        const bit = if (uprobe)
+            try determine_uprobe_retprobe_bit()
+        else
+            try determine_kprobe_retprobe_bit();
+    }
+
+    const attr = Event.Attr{
+        .size = @sizeOf(Event.Attr),
+        .type = type,
+        // TODO: ensure null terminated
+        .config1 = @ptrToInt(u64, name.ptr),
+        .config2 = offset,
+    };
+
+    return event_open(
+        &attr,
+        if (pid < 0) -1 else pid,
+        if (pid == -1) 0 else -1,
+        -1,
+        c.PERF_FLAG_FD_CLOEXEC,
+    );
+}
+
+pub fn event_open_tracepoint(category: []const u8, name: []const u8) !fd_t {
+    const id = try determine_tracepoint_id(category, name);
+
+    const attr = Event.Attr{
+        .type = c.PERF_TYPE_TRACEPOINT,
+        .size = @sizeOf(Event.Attr),
+        .config = id,
+    };
+
+    return event_open(&attr, -1, 0, -1, c.PERF_FLAG_FD_CLOEXEC);
 }
 
 test "Event.Attr size" {

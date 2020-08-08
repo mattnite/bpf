@@ -1,12 +1,18 @@
 const std = @import("std");
-const Self = @This();
+const perf = @import("perf.zig");
 const Link = @import("link.zig");
 
+const c = @cImport({
+    @cInclude("perf_event.h");
+});
+
+const Self = @This();
+
+fd: fd_t,
 name: []const u8,
 type: ProgType,
 insns: []Insn,
 loaded: bool,
-instances: []fd_t,
 expected_attach_type: AttachType,
 
 // TODO: name vs title
@@ -35,9 +41,36 @@ pub fn unpin(self: *Self, path: []const u8) !void {}
 
 // attach functions
 pub fn attach(self: *Self) !*Link {}
-pub fn attach_perf_event(self: *Self, perf_event: fd_t) !*Link {}
-pub fn attach_kprobe(self: *Self, retprobe: bool, func_name: []const u8) !*Link {}
-pub fn attach_uprobe(self: *Self, retprobe: bool, pid: pid_t, binary_path: []const u8, func_offset: usize) !*Link {}
+
+fn bpf_link_detach_perf_event(link: *Link) !void {
+    try perf.event_disable(link.fd);
+    try std.os.close(link.fd);
+}
+
+pub fn attach_perf_event(self: *Self, pfd: fd_t) !Link {
+    try perf.event_set_bpf(pfd, self.fd);
+    try perf.event_enable(pfd);
+    return Link{
+        .fd = pfd,
+        .detach = bpf_link_detach_perf_event,
+    };
+}
+
+pub fn attach_kprobe(self: *Self, retprobe: bool, func_name: []const u8) !Link {
+    // TODO: I don't like how janky this function is, give it more meaning --
+    // might as well specialize it for u and k probes
+    const pfd = try perf.event_open_probe(false, retprobe, func_name, 0, -1);
+    errdefer std.os.close(pfd);
+
+    return self.attach_perf_event(pfd);
+}
+
+pub fn attach_uprobe(self: *Self, retprobe: bool, pid: pid_t, binary_path: []const u8, func_offset: usize) !*Link {
+    const pfd = try perf.event_open_probe(true, retprobe, binary_path, func_offset, pid);
+    errdefer std.os.close(pfd);
+
+    return self.attach_perf_event(pfd);
+}
 pub fn attach_tracepoint(self: *Self, tp_category: []const u8, tp_name: []const u8) !*Link {}
 pub fn attach_raw_tracepoint(self: *Self, tp_name: []const u8) !*Link {}
 pub fn attach_trace(self: *Self) !*Link {}
