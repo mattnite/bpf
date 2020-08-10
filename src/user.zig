@@ -546,18 +546,3 @@ pub fn link_get_fd_by_id() void {}
 pub fn link_get_next_id() void {}
 pub fn enable_stats() void {}
 pub fn iter_create() void {}
-
-fn determine_tracepoint_id(category: []const u8, name: []const u8) !void {
-    var buf: [PATH_MAX]u8 = undefined;
-
-    try std.fmt.bufPrint(&buf, "/sys/kernel/debug/tracing/events/{}/{}/id", .{
-        category, name,
-    });
-
-    const file = std.fs.File{
-        .handle = try std.os.open(buf, 0, 0),
-    };
-    defer file.close();
-
-    // read line from file
-}

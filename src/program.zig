@@ -71,7 +71,11 @@ pub fn attach_uprobe(self: *Self, retprobe: bool, pid: pid_t, binary_path: []con
 
     return self.attach_perf_event(pfd);
 }
-pub fn attach_tracepoint(self: *Self, tp_category: []const u8, tp_name: []const u8) !*Link {}
+
+pub fn attach_tracepoint(self: *Self, category: []const u8, name: []const u8) !Link {
+    return self.attach_perf_event(try perf.event_open_tracepoint(category, name));
+}
+
 pub fn attach_raw_tracepoint(self: *Self, tp_name: []const u8) !*Link {}
 pub fn attach_trace(self: *Self) !*Link {}
 pub fn attach_lsm(self: *Self) !*Link {}
