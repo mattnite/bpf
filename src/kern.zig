@@ -1,14 +1,8 @@
 pub usingnamespace @import("common.zig");
 pub const helpers = @import("helpers.zig");
+const map = @import("map");
 const std = @import("std");
 const assert = std.debug.assert;
-
-pub const MapDef = struct {
-    map_type: MapType,
-    key_size: u32,
-    value_size: u32,
-    max_entries: u32,
-};
 
 pub const ktime_get_ns = helpers.ktime_get_ns;
 pub const get_prandom_u32 = helpers.get_prandom_u32;
@@ -39,36 +33,37 @@ pub fn trace_printk(comptime fmt: []const u8, args: []u64) !u32 {
 //  to methods
 pub const PerfEventArray = Map(u32, u32, .perf_event_array, 0);
 
-pub fn Map(comptime Key: type, comptime Value: type, map_type: MapType, entries: u32) type {
+pub fn Map(comptime Key: type, comptime Value: type, map_type: map.Type, entries: u32) type {
     return struct {
-        base: MapDef,
+        def: map.Def,
 
         const Self = @This();
 
         pub fn init() Self {
-            return Self{
-                .base = .{
+            return .{
+                .def = .{
                     .map_type = map_type,
                     .key_size = @sizeOf(Key),
                     .value_size = @sizeOf(Value),
                     .max_entries = entries,
+                    .flags = 0,
                 },
             };
         }
 
         pub fn lookup(self: *const Self, key: *const Key) ?*Value {
-            return @ptrCast(?*Value, @alignCast(@alignOf(?*Value), helpers.map_lookup_elem(&self.base, key)));
+            return @ptrCast(?*Value, @alignCast(@alignOf(?*Value), helpers.map_lookup_elem(&self.def, key)));
         }
 
         pub fn update(self: *const Self, flags: UpdateFlags, key: *const Key, value: *const Value) !void {
-            switch (helpers.map_update_elem(&self.base, key, value, @enumToInt(flags))) {
+            switch (helpers.map_update_elem(&self.def, key, value, @enumToInt(flags))) {
                 0 => return,
                 else => return error.UnknownError,
             }
         }
 
         pub fn delete(self: *const Self, key: *const Key) !void {
-            switch (helpers.map_delete_elem(&self.base, key)) {
+            switch (helpers.map_delete_elem(&self.def, key)) {
                 0 => return,
                 else => return error.UnknownError,
             }
