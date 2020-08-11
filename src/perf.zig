@@ -130,7 +130,6 @@ pub const Buffer = struct {
     lost: ?LostFn,
     ctx: usize,
 
-    page_size: usize,
     mmap_size: usize,
     cpu_bufs: []CpuBuf,
     events: []std.os.linux.epoll_event,
@@ -140,34 +139,37 @@ pub const Buffer = struct {
     const Self = @This();
 
     // hacky including self here but we'll redesign this later
+    // TODO: runtime determination of page size, using std for now
     pub fn init(
-        self: *Self,
         allocator: *Allocator,
         map: fd_t,
         page_cnt: usize,
         sample_cb: ?perf_buffer_sample_fn,
         lost_cb: ?perf_buffer_lost_fn,
         ctx: usize,
-    ) !Buffer {
-        const page_size = getpagesize();
+    ) !*Buffer {
         const cpus_cnt = std.Thread.cpuCount();
         const epoll = try epoll_create1(some_flags);
 
-        const cpu_bufs = try allocator.alloc(CpuBuf, cpus_cnt);
+        var ret = try allocator.create(Buffer);
+        errdefer allocator.free(ret);
+
+        var cpu_bufs = try allocator.alloc(CpuBuf, cpus_cnt);
         errdefer allocator.free(cpu_bufs);
 
-        const events = try allocator.alloc(std.os.linux.epoll_event, cpus_cnt);
+        var events = try allocator.alloc(std.os.linux.epoll_event, cpus_cnt);
         errdefer allocator.free(events);
 
-        var i: usize = 0;
+        var i: i32 = 0;
         while (i < cpus_cnt) : (i += 1) {
             cpu_bufs[i] = try CpuBuf.init(
                 std.heap.page_allocator,
                 self,
+                i,
             );
             errdefer cpu_bufs[i].deinit();
 
-            try map_update_elem(map, map_key, cpu_buf.fd, 0);
+            try map_update_elem(map, cpu_buf.cpu, cpu_buf.fd, 0);
             events[i] = std.os.linux.epoll_event{
                 .events = std.os.EPOLLIN,
                 .data = .{
@@ -178,19 +180,20 @@ pub const Buffer = struct {
             try epoll_ctl(epoll, EPOLL_CTL_ADD, cpu_buf[i].fd, @ptrToInt(&events[i]));
         }
 
-        return .{
+        ret.* = .{
             .allocator = allocator,
             .event_cb = event_cb,
             .sample_cb = sample_cb,
             .lost_cb = lost_cb,
             .ctx = ctx,
-            .page_size = page_size,
-            .mmap_size = page_size * page_cnt,
+            .mmap_size = std.mem.page_size * page_cnt,
             .map = fd,
             .epoll = epoll,
             .cpu_bufs = cpu_bufs,
             .events = events,
         };
+
+        return ret;
     }
 
     pub fn deinit(self: *Self) void {
@@ -199,9 +202,10 @@ pub const Buffer = struct {
             cpu_buf.deinit();
         }
 
-        allocator.free(self.cpu_bufs);
-        allocator.free(self.events);
+        self.allocator.free(self.cpu_bufs);
+        self.allocator.free(self.events);
         os.close(self.epoll);
+        self.allocator.destroy(self);
     }
 
     fn process_record(header: *Header, ctx: usize) !bool {
@@ -229,7 +233,6 @@ pub const Buffer = struct {
         return event_read_simple(
             cpu_buf.base,
             self.mmap_size,
-            self.page_size,
             cpu_buf.buf,
             cpu_buf.buf_size,
             process_record,
@@ -247,7 +250,7 @@ pub const Buffer = struct {
         }
     }
 
-    pub const EventFn = fn (ctx: usize, cpu: i32, header: *Header) !bool;
+    pub const EventFn = fn (ctx: usize, cpu: i32, header: *event.Header) !bool;
     pub const SampleFn = fn (ctx: usize, cpu: i32, data: []u8) void;
     pub const LostFn = fn (ctx: usize, cpu: i32, cnt: u64) void;
 };
@@ -259,32 +262,29 @@ pub const CpuBuf = struct {
     base: []u8, // mmaped memory
     buf: ?[]u8, // TODO: figure out, for reconstructing segmented data
     cpu: i32,
-    map_key: i32,
 
-    pub fn init(allocator: *Allocator, pb: *Buffer, cpu: i32, map_key: i32) !CpuBuf {
+    pub fn init(allocator: *Allocator, pb: *Buffer, cpu: i32) !CpuBuf {
         const fd = try event_open(attr, -1, cpu, -1, PERF_FLAG_FD_CLOEXEC);
         errdefer os.close(fd);
 
-        try ioctl(fd, enable, null);
+        try event_enable(fd);
         return .{
             .allocator = allocator,
             .fd = fd,
             .pb = pb,
-            .base = try os.mmap(null, pb.mmap_size + pb.page_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0),
+            .base = try os.mmap(null, pb.mmap_size + std.mem.page_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0),
             .buf = null,
             .cpu = cpu,
-            .map_key = map_key,
         };
     }
 
     pub fn deinit(self: *Self) void {
         if (self.buf) |b| {
             self.allocator.free(b);
-            self.buf = null;
         }
 
         os.munmap(self.base);
-        ioctl(self.fd, disable, null) catch {};
+        event_disable(self.id) catch {};
         os.close(self.fd);
     }
 };
@@ -394,17 +394,16 @@ pub fn event_open_tracepoint(category: []const u8, name: []const u8) !fd_t {
 
 pub fn event_read_simple(
     mmap_mem: []u8,
-    page_size: usize,
     copy_mem: []u8,
-    callback: fn (*Event.Header, usize) Event.Ret,
+    callback: fn (*Event.Header, usize) !bool,
     private_data: usize,
-) Event.Ret {
+) !bool {
     // making header a volatile pointer might be what we need
     const header = @ptrCast(*volatile Event.MmapPage, mmap_mem.ptr);
     const data_head = header.data_head;
     const data_tail = header.data_tail;
-    const base = @ptrCast(*u8, header) + page_size;
-    var ret = Event.Ret.cont;
+    const base = @ptrCast(*u8, header) + std.mem.page_size;
+    var ret = false;
     var ehdr: *Event.Header = undefined;
     var ehdr_size: usize = undefined;
 
