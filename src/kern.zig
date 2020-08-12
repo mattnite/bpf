@@ -1,6 +1,5 @@
 pub usingnamespace @import("common.zig");
 pub const helpers = @import("helpers.zig");
-const map = @import("map");
 const std = @import("std");
 const assert = std.debug.assert;
 
@@ -10,6 +9,14 @@ pub const get_smp_processor_id = helpers.get_smp_processor_id;
 pub const get_current_pid_tgid = helpers.get_current_pid_tgid;
 pub const get_current_uid_gid = helpers.get_current_uid_gid;
 pub const get_cgroup_classid = helpers.get_cgroup_classid;
+
+pub const MapDef = packed struct {
+    type: MapType,
+    key_size: u32,
+    value_size: u32,
+    max_entries: u32,
+    flags: u32,
+};
 
 pub fn trace_printk(comptime fmt: []const u8, args: []u64) !u32 {
     const rc = switch (args.len) {
@@ -33,16 +40,16 @@ pub fn trace_printk(comptime fmt: []const u8, args: []u64) !u32 {
 //  to methods
 pub const PerfEventArray = Map(u32, u32, .perf_event_array, 0);
 
-pub fn Map(comptime Key: type, comptime Value: type, map_type: map.Type, entries: u32) type {
+pub fn Map(comptime Key: type, comptime Value: type, map_type: MapType, entries: u32) type {
     return struct {
-        def: map.Def,
+        def: MapDef,
 
         const Self = @This();
 
         pub fn init() Self {
             return .{
                 .def = .{
-                    .map_type = map_type,
+                    .type = map_type,
                     .key_size = @sizeOf(Key),
                     .value_size = @sizeOf(Value),
                     .max_entries = entries,

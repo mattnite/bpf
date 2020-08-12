@@ -1,18 +1,40 @@
 usingnamespace @import("ioctl.zig");
 const std = @import("std");
+const bpf = @import("user.zig");
 const os = std.os;
 const expect = std.testing.expect;
 
 const fd_t = std.os.fd_t;
 const pid_t = std.os.pid_t;
+const Allocator = std.mem.Allocator;
 
-pub const Event = struct {
+// TODO: implement fully
+const SwId = enum(u64) {
+    count_sw_bpf_output = 10,
+};
+
+const Flag = enum(u32) {
+    fd_no_group = 1 << 0,
+    fd_output = 1 << 1,
+    pid_cgroup = 1 << 2,
+    fd_cloexec = 1 << 3,
+};
+
+const TypeId = enum(u32) {
+    software = 1,
+};
+
+pub const event = struct {
+    const SampleFormat = enum(u64) {
+        raw = 1 << 10,
+    };
+
     pub const Attr = packed struct {
-        type: u32,
+        type: TypeId,
         size: u32,
-        config: u64,
+        config: SwId,
         sample: packed union { period: u64, frequency: u64 },
-        sample_type: u64,
+        sample_type: SampleFormat,
         read_format: u64,
 
         disabled: u1,
@@ -109,15 +131,30 @@ pub const Event = struct {
             sample = 9,
         };
     };
+
+    pub fn open(attr: *Attr, pid: pid_t, cpu: i32, group_fd: i32) !fd_t {
+        const rc = std.os.linux.syscall5(
+            .perf_event_open,
+            @ptrToInt(attr),
+            @intCast(usize, pid),
+            @intCast(usize, cpu),
+            @intCast(usize, group_fd),
+            @enumToInt(Flag.fd_cloexec),
+        );
+        switch (rc) {
+            0 => return @intCast(fd_t, rc),
+            else => return std.os.unexpectedErrno(rc),
+        }
+    }
 };
 
 pub const RawSample = packed struct {
-    header: Event.Header,
+    header: event.Header,
     size: u32,
 };
 
 pub const LostSample = packed struct {
-    header: Event.Header,
+    header: event.Header,
     id: u64,
     lost: u64,
     sample_id: u64,
@@ -144,15 +181,16 @@ pub const Buffer = struct {
         allocator: *Allocator,
         map: fd_t,
         page_cnt: usize,
-        sample_cb: ?perf_buffer_sample_fn,
-        lost_cb: ?perf_buffer_lost_fn,
+        event_cb: ?EventFn,
+        sample_cb: ?SampleFn,
+        lost_cb: ?LostFn,
         ctx: usize,
     ) !*Buffer {
-        const cpus_cnt = std.Thread.cpuCount();
-        const epoll = try epoll_create1(some_flags);
+        const cpus_cnt = try std.Thread.cpuCount();
+        const epoll = try std.os.epoll_create1(std.c.EPOLL_CLOEXEC);
 
         var ret = try allocator.create(Buffer);
-        errdefer allocator.free(ret);
+        errdefer allocator.destroy(ret);
 
         var cpu_bufs = try allocator.alloc(CpuBuf, cpus_cnt);
         errdefer allocator.free(cpu_bufs);
@@ -160,16 +198,21 @@ pub const Buffer = struct {
         var events = try allocator.alloc(std.os.linux.epoll_event, cpus_cnt);
         errdefer allocator.free(events);
 
-        var i: i32 = 0;
+        var i: usize = 0;
         while (i < cpus_cnt) : (i += 1) {
             cpu_bufs[i] = try CpuBuf.init(
                 std.heap.page_allocator,
-                self,
-                i,
+                ret,
+                @intCast(i32, i),
             );
             errdefer cpu_bufs[i].deinit();
 
-            try map_update_elem(map, cpu_buf.cpu, cpu_buf.fd, 0);
+            try bpf.map_update_elem(
+                map,
+                std.mem.asBytes(&cpu_bufs[i].cpu),
+                std.mem.asBytes(&cpu_bufs[i].fd),
+                0,
+            );
             events[i] = std.os.linux.epoll_event{
                 .events = std.os.EPOLLIN,
                 .data = .{
@@ -177,17 +220,17 @@ pub const Buffer = struct {
                 },
             };
 
-            try epoll_ctl(epoll, EPOLL_CTL_ADD, cpu_buf[i].fd, @ptrToInt(&events[i]));
+            try std.os.epoll_ctl(epoll, std.c.EPOLL_CTL_ADD, cpu_bufs[i].fd, &events[i]);
         }
 
         ret.* = .{
             .allocator = allocator,
-            .event_cb = event_cb,
-            .sample_cb = sample_cb,
-            .lost_cb = lost_cb,
+            .event = event_cb,
+            .sample = sample_cb,
+            .lost = lost_cb,
             .ctx = ctx,
             .mmap_size = std.mem.page_size * page_cnt,
-            .map = fd,
+            .map = map,
             .epoll = epoll,
             .cpu_bufs = cpu_bufs,
             .events = events,
@@ -208,7 +251,7 @@ pub const Buffer = struct {
         self.allocator.destroy(self);
     }
 
-    fn process_record(header: *Header, ctx: usize) !bool {
+    fn process_record(header: *Header, ctx: usize) anyerror!bool {
         const cpu_buf = @intToPtr(*CpuBuf, ctx);
         const pb = cpu_buf.pb;
 
@@ -250,7 +293,7 @@ pub const Buffer = struct {
         }
     }
 
-    pub const EventFn = fn (ctx: usize, cpu: i32, header: *event.Header) !bool;
+    pub const EventFn = fn (ctx: usize, cpu: i32, header: *event.Header) anyerror!bool;
     pub const SampleFn = fn (ctx: usize, cpu: i32, data: []u8) void;
     pub const LostFn = fn (ctx: usize, cpu: i32, cnt: u64) void;
 };
@@ -263,16 +306,34 @@ pub const CpuBuf = struct {
     buf: ?[]u8, // TODO: figure out, for reconstructing segmented data
     cpu: i32,
 
+    const Self = @This();
+
     pub fn init(allocator: *Allocator, pb: *Buffer, cpu: i32) !CpuBuf {
-        const fd = try event_open(attr, -1, cpu, -1, PERF_FLAG_FD_CLOEXEC);
+        // I hate this C stuff but it's contained for now
+        var attr = std.mem.zeroes(event.Attr);
+
+        attr.config = .count_sw_bpf_output;
+        attr.type = .software;
+        attr.sample_type = .raw;
+        attr.sample.period = 1;
+        attr.wakeup.events = 1;
+
+        const fd = try event.open(&attr, -1, cpu, -1);
         errdefer os.close(fd);
 
         try event_enable(fd);
-        return .{
+        return CpuBuf{
             .allocator = allocator,
             .fd = fd,
             .pb = pb,
-            .base = try os.mmap(null, pb.mmap_size + std.mem.page_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0),
+            .base = try os.mmap(
+                null,
+                pb.mmap_size + std.mem.page_size,
+                std.c.PROT_READ | std.c.PROT_WRITE,
+                std.c.MAP_SHARED,
+                fd,
+                0,
+            ),
             .buf = null,
             .cpu = cpu,
         };
@@ -289,35 +350,27 @@ pub const CpuBuf = struct {
     }
 };
 
-pub fn event_open(attr: *Event.Attr, pid: pid_t, cpu: i32, group_fd: i32, flags: PerfFlags) !fd_t {
-    const rc = std.os.linux.syscall5(.perf_event_open, attr, pid, cpu, group_fd, flags);
-    switch (rc) {
-        0 => return @intCast(fd_t, rc),
-        else => return std.os.unexpectedErrno(rc),
-    }
-}
-
 const enable = io('$', 0);
 const disable = io('$', 1);
 const set_bpf = iow('$', 8, fd_t);
 
 pub fn event_disable(fd: fd_t) !void {
-    return try ioctl(fd, disable, null);
+    return ioctl(fd, disable, @intCast(u32, 0));
 }
 
 pub fn event_set_bpf(fd: fd_t, prog_fd: fd_t) !void {
-    return try ioctl(fd, set_bpf, prog_fd);
+    return ioctl(fd, set_bpf, prog_fd);
 }
 
 pub fn event_enable(fd: fd_t) !void {
-    return try ioctl(fd, enable, null);
+    return ioctl(fd, enable, @intCast(u32, 0));
 }
 
 fn determine_kprobe_perf_type() !u32 {
     return parse_uint_from_file("/sys/bus/event_source/devices/kprobe/type", "{}\n");
 }
 
-fn determine_kprobe_perf_type() !u32 {
+fn determine_uprobe_perf_type() !u32 {
     return parse_uint_from_file("/sys/bus/event_source/devices/uprobe/type", "{}\n");
 }
 
@@ -325,7 +378,7 @@ fn determine_kprobe_retprobe_bit() !u32 {
     return parse_uint_from_file("/sys/bus/event_source/devices/kprobe/format/retprobe", "config:{}\n");
 }
 
-fn determine_kprobe_retprobe_bit() !u32 {
+fn determine_uprobe_retprobe_bit() !u32 {
     return parse_uint_from_file("/sys/bus/event_source/devices/uprobe/format/retprobe", "config:{}\n");
 }
 
@@ -392,12 +445,13 @@ pub fn event_open_tracepoint(category: []const u8, name: []const u8) !fd_t {
     return event_open(&attr, -1, 0, -1, c.PERF_FLAG_FD_CLOEXEC);
 }
 
+// TODO: return null when there are no more events in the ring buffer
 pub fn event_read_simple(
+    allocator: *Allocator,
     mmap_mem: []u8,
-    copy_mem: []u8,
     callback: fn (*Event.Header, usize) !bool,
     private_data: usize,
-) !bool {
+) !?[]u8 {
     // making header a volatile pointer might be what we need
     const header = @ptrCast(*volatile Event.MmapPage, mmap_mem.ptr);
     const data_head = header.data_head;

@@ -1,12 +1,14 @@
 const builtin = @import("builtin");
 const std = @import("std");
 
+const fd_t = std.os.fd_t;
+
 const expectEqual = std.testing.expectEqual;
 const bits = switch (builtin.arch) {
     .mips,
     .mipsel,
     .mips64,
-    .mips643el,
+    .mips64el,
     .powerpc,
     .powerpc64,
     .powerpc64le,
@@ -14,7 +16,7 @@ const bits = switch (builtin.arch) {
     .sparcv9,
     .sparcel,
     => .{ .size = 13, .dir = 3, .none = 1, .read = 2, .write = 4 },
-    else => .{ .size = 12, .dir = 2, .none = 0, .read = 1, .write = 2 },
+    else => .{ .size = 14, .dir = 2, .none = 0, .read = 1, .write = 2 },
 };
 
 const Direction = std.meta.Int(false, bits.dir);
@@ -32,31 +34,28 @@ test "IoctlCmd size" {
 
 pub fn ioctl(fd: fd_t, cmd: IoctlCmd, arg: anytype) !void {
     // TODO: how to do validation in comptime and runtime?
-    if (cmd.dir != bits.none and @sizeOf(arg) != cmd.size) {
-        comptime {
-            @compileError("ioctl arg size does not match size defined in cmd");
-        }
+    if (cmd.dir != bits.none and @sizeOf(@TypeOf(arg)) != cmd.size) {
         return error.BadArgsWidth;
     }
 
-    const rc = std.os.linux.ioctl(fd, @as(u32, cmd), @as(usize, arg));
-    switch (errno(rc)) {
+    const rc = std.os.linux.ioctl(fd, @bitCast(u32, cmd), @as(usize, arg));
+    switch (std.os.errno(rc)) {
         0 => return,
-        else => |err| return unexpectedErrno(err),
+        else => |err| return std.os.unexpectedErrno(err),
     }
 }
 
-fn io_impl(dir: Direction, type: u8, nr: u8, comptime T: type) IoctlCmd {
+fn io_impl(dir: Direction, io_type: u8, nr: u8, comptime T: type) IoctlCmd {
     return .{
         .dir = dir,
         .size = @sizeOf(T),
-        .type = type,
+        .type = io_type,
         .nr = nr,
     };
 }
 
-pub fn io(type: u8, nr: u8) IoctlCmd {
-    return io_impl(bits.none, type, nr, void);
+pub fn io(io_type: u8, nr: u8) IoctlCmd {
+    return io_impl(bits.none, io_type, nr, void);
 }
 
 pub fn ior(type: u8, nr: u8, comptime T: type) IoctlCmd {

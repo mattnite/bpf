@@ -1,3 +1,5 @@
+usingnamespace @import("common.zig");
+
 const std = @import("std");
 const perf = @import("perf.zig");
 const Link = @import("link.zig");
@@ -6,17 +8,51 @@ const c = @cImport({
     @cInclude("perf_event.h");
 });
 
+const fd_t = std.os.fd_t;
+
 const Self = @This();
 
 fd: fd_t,
 name: []const u8,
-type: ProgType,
+type: Type,
 insns: []Insn,
 loaded: bool,
 expected_attach_type: AttachType,
 
-// TODO: name vs title
+pub const Type = enum(u32) {
+    unspec,
+    socket_filter,
+    kprobe,
+    sched_cls,
+    sched_act,
+    tracepoint,
+    xdp,
+    perf_event,
+    cgroup_skb,
+    cgroup_sock,
+    lwt_in,
+    lwt_out,
+    lwt_xmit,
+    sock_ops,
+    sk_skb,
+    cgroup_device,
+    sk_msg,
+    raw_tracepoint,
+    cgroup_sock_addr,
+    lwt_seg6local,
+    lirc_mode2,
+    sk_reuseport,
+    flow_dissector,
+    cgroup_sysctl,
+    raw_tracepoint_writable,
+    cgroup_sockopt,
+    tracing,
+    struct_ops,
+    ext,
+    lsm,
+};
 
+// TODO: name vs title
 pub fn load(self: *Self, license: []const u8, kern_version: u32) !void {
     if (self.loaded) {
         return error.AlreadyLoaded;

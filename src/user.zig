@@ -1,12 +1,14 @@
 usingnamespace @import("common.zig");
 usingnamespace std.os;
 
+pub const perf = @import("perf.zig");
 pub const ComptimeObject = @import("comptime_object.zig");
 pub const RuntimeObject = @import("object.zig");
+pub const PerfEventArray = @import("map.zig").PerfEventArray;
 
 const builtin = @import("builtin");
 const std = @import("std");
-const Map = @import("map.zig");
+const map = @import("map.zig");
 const syscall3 = std.os.linux.syscall3;
 const expectEqual = std.testing.expectEqual;
 const expect = std.testing.expect;
@@ -46,77 +48,6 @@ pub const Cmd = enum(usize) {
     link_get_next_id,
     enable_stats,
     iter_create,
-};
-
-pub const ProgType = enum(u32) {
-    unspec,
-    socket_filter,
-    kprobe,
-    sched_cls,
-    sched_act,
-    tracepoint,
-    xdp,
-    perf_event,
-    cgroup_skb,
-    cgroup_sock,
-    lwt_in,
-    lwt_out,
-    lwt_xmit,
-    sock_ops,
-    sk_skb,
-    cgroup_device,
-    sk_msg,
-    raw_tracepoint,
-    cgroup_sock_addr,
-    lwt_seg6local,
-    lirc_mode2,
-    sk_reuseport,
-    flow_dissector,
-    cgroup_sysctl,
-    raw_tracepoint_writable,
-    cgroup_sockopt,
-    tracing,
-    struct_ops,
-    ext,
-    lsm,
-};
-
-pub const AttachType = enum(u32) {
-    cgroup_inet_ingress,
-    cgroup_inet_egress,
-    cgroup_inet_sock_create,
-    cgroup_sock_ops,
-    sk_skb_stream_parser,
-    sk_skb_stream_verdict,
-    cgroup_device,
-    sk_msg_verdict,
-    cgroup_inet4_bind,
-    cgroup_inet6_bind,
-    cgroup_inet4_connect,
-    cgroup_inet6_connect,
-    cgroup_inet4_post_bind,
-    cgroup_inet6_post_bind,
-    cgroup_udp4_sendmsg,
-    cgroup_udp6_sendmsg,
-    lirc_mode2,
-    flow_dissector,
-    cgroup_sysctl,
-    cgroup_udp4_recvmsg,
-    cgroup_udp6_recvmsg,
-    cgroup_getsockopt,
-    cgroup_setsockopt,
-    trace_raw_tp,
-    trace_fentry,
-    trace_fexit,
-    modify_return,
-    lsm_mac,
-    trace_iter,
-    cgroup_inet4_getpeername,
-    cgroup_inet6_getpeername,
-    cgroup_inet4_getsockname,
-    cgroup_inet6_getsockname,
-    xdp_devmap,
-    cgroup_inet_sock_release,
 };
 
 const tag_size = 8;
@@ -179,8 +110,8 @@ pub const MapCreateAttr = extern struct {
 };
 
 pub const MapElemAttr = extern struct {
-    map_fd: u32 = 0,
-    key: u32 = 0,
+    map_fd: fd_t = 0,
+    key: u64 = 0,
     result: extern union {
         value: u64,
         next_key: u64,
@@ -317,7 +248,7 @@ pub fn bpf(cmd: Cmd, attr: *Attr, size: u32) usize {
     return syscall3(.bpf, @enumToInt(cmd), @ptrToInt(attr), size);
 }
 
-pub fn map_create(map_type: Map.Type, key_size: u32, value_size: u32, max_entries: u32) !fd_t {
+pub fn map_create(map_type: map.Type, key_size: u32, value_size: u32, max_entries: u32) !fd_t {
     var attr = Attr{
         .map_create = MapCreateAttr{
             .map_type = @enumToInt(map_type),
@@ -351,7 +282,7 @@ pub fn map_lookup_elem(fd: fd_t, key: []const u8, value: []u8) !void {
         },
     };
 
-    const rc = bpf(BPF_MAP_LOOKUP_ELEM, &attr, @sizeOf(MapElemAttr));
+    const rc = bpf(.map_lookup_elem, &attr, @sizeOf(MapElemAttr));
     switch (errno(rc)) {
         0 => return,
         EBADF => return error.BadFd,
@@ -367,13 +298,13 @@ pub fn map_update_elem(fd: fd_t, key: []const u8, value: []const u8, flags: u64)
     var attr = Attr{
         .map_elem = MapElemAttr{
             .map_fd = fd,
-            .key = @ptrToInt(u64, key.ptr),
-            .value = @ptrToInt(u64, value.ptr),
+            .key = @ptrToInt(key.ptr),
+            .result = .{ .value = @ptrToInt(value.ptr) },
             .flags = flags,
         },
     };
 
-    const rc = bpf(BPF_MAP_UPDATE_ELEM, &attr, @sizeOf(MapElemAttr));
+    const rc = bpf(.map_update_elem, &attr, @sizeOf(MapElemAttr));
     switch (errno(rc)) {
         0 => return,
         E2BIG => return error.ReachedMaxEntries,
@@ -394,7 +325,7 @@ pub fn map_delete_elem(fd: fd_t, key: []const u8) !void {
         },
     };
 
-    const rc = bpf(BPF_MAP_DELETE_ELEM, &attr, @sizeOf(MapElemAttr));
+    const rc = bpf(.map_delete_elem, &attr, @sizeOf(MapElemAttr));
     switch (errno(rc)) {
         0 => return,
         EBADF => return error.BadFd,
@@ -415,7 +346,7 @@ pub fn map_get_next_key(fd: fd_t, key: []const u8, next_key: []u8) !void {
         },
     };
 
-    const rc = bpf(BPF_MAP_GET_NEXT_KEY, &attr, @sizeOf(MapElemAttr));
+    const rc = bpf(.map_get_next_key, &attr, @sizeOf(MapElemAttr));
     switch (errno(rc)) {
         0 => return,
         EBADF => error.BadFd,
@@ -493,7 +424,7 @@ pub fn obj_pin(fd: fd_t, pathname: []const u8) !void {
         },
     };
 
-    const rc = bpf(c.BPF_OBJ_PIN, &attr, @sizeOf(ObjAttr));
+    const rc = bpf(.obj_pin, &attr, @sizeOf(ObjAttr));
     return switch (errno(rc)) {
         0 => null,
         EOPNOTSUPP => error.OpNotSupported,
@@ -511,7 +442,7 @@ pub fn obj_get(pathname: []const u8, flags: ObjFlags) !fd_t {
         },
     };
 
-    const rc = bpf(c.BPF_OBJ_GET, &attr, @sizeOf(ObjAttr));
+    const rc = bpf(.obj_get, &attr, @sizeOf(ObjAttr));
     return switch (errno(rc)) {
         0 => null,
         EINVAL => error.InvalidArguments,
