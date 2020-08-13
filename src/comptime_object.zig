@@ -42,11 +42,11 @@ pub fn init(comptime path: []const u8) comptime Self {
 pub fn load() !void {}
 pub fn unload() void {}
 
-pub fn get_map(self: *const Self, comptime T: type, comptime name: []const u8) T {
+pub fn get_map(comptime self: *const Self, comptime T: type, comptime name: []const u8) comptime T {
     return for (self.maps) |m| {
         if (std.mem.eql(u8, name, m.name)) {
             if (m.def.key_size != @sizeOf(T.Key))
-                @compileError("Key size does not match in " ++ name);
+                @compileError("Key size does not match for " ++ name);
 
             if (m.def.value_size != @sizeOf(T.Value))
                 @compileError("Value size does not match");

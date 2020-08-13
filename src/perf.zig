@@ -9,88 +9,92 @@ const pid_t = std.os.pid_t;
 const Allocator = std.mem.Allocator;
 
 // TODO: implement fully
-const SwId = enum(u64) {
+const SwId = extern enum(u64) {
+    count_sw_cpu_clock = 0,
     count_sw_bpf_output = 10,
 };
 
-const Flag = enum(u32) {
+const Flag = extern enum(u32) {
     fd_no_group = 1 << 0,
     fd_output = 1 << 1,
     pid_cgroup = 1 << 2,
     fd_cloexec = 1 << 3,
 };
 
-const TypeId = enum(u32) {
+const TypeId = extern enum(u32) {
+    hardware = 0,
     software = 1,
 };
 
 pub const event = struct {
-    const SampleFormat = enum(u64) {
+    const SampleFormat = extern enum(u64) {
+        invalid = 0,
         raw = 1 << 10,
     };
 
-    pub const Attr = packed struct {
-        type: TypeId,
-        size: u32,
-        config: SwId,
-        sample: packed union { period: u64, frequency: u64 },
-        sample_type: SampleFormat,
-        read_format: u64,
+    pub const Attr = extern struct {
+        type: TypeId = .hardware,
+        size: u32 = 0,
+        config: SwId = .count_sw_cpu_clock,
+        sample: extern union { period: u64, frequency: u64 } = .{ .period = 0 },
+        sample_type: SampleFormat = .invalid,
+        read_format: u64 = 0,
 
-        disabled: u1,
-        inherit: u1,
-        pinned: u1,
-        exlusive: u1,
-        exlude_user: u1,
-        exclude_kernel: u1,
-        exclude_hv: u1,
-        exclude_idle: u1,
-        mmap: u1,
-        comm: u1,
-        freq: u1,
-        inherit_stat: u1,
-        enable_on_exec: u1,
-        task: u1,
-        watermark: u1,
-        precise_ip: u2,
-        mmap_data: u1,
-        sample_id_all: u1,
-        exclude_host: u1,
-        exclude_guest: u1,
-        exclude_callchain_kernel: u1,
-        exclude_callchain_user: u1,
-        mmap2: u1,
-        comm_exec: u1,
-        use_clockid: u1,
-        context_switch: u1,
-        _reserved_1: u37,
+        flags: u64 = 0,
+        //disabled: u1 = 0,
+        //inherit: u1 = 0,
+        //pinned: u1 = 0,
+        //exlusive: u1 = 0,
+        //exlude_user: u1 = 0,
+        //exclude_kernel: u1 = 0,
+        //exclude_hv: u1 = 0,
+        //exclude_idle: u1 = 0,
+        //mmap: u1 = 0,
+        //comm: u1 = 0,
+        //freq: u1 = 0,
+        //inherit_stat: u1 = 0,
+        //enable_on_exec: u1 = 0,
+        //task: u1 = 0,
+        //watermark: u1 = 0,
+        //precise_ip: u2 = 0,
+        //mmap_data: u1 = 0,
+        //sample_id_all: u1 = 0,
+        //exclude_host: u1 = 0,
+        //exclude_guest: u1 = 0,
+        //exclude_callchain_kernel: u1 = 0,
+        //exclude_callchain_user: u1 = 0,
+        //mmap2: u1 = 0,
+        //comm_exec: u1 = 0,
+        //use_clockid: u1 = 0,
+        //context_switch: u1 = 0,
+        //_reserved_1: u37 = 0,
 
-        wakeup: packed union { events: u32, watermark: u32 },
-        bp_type: u32,
+        wakeup: extern union { events: u32, watermark: u32 } = .{ .events = 0 },
+        bp_type: u32 = 0,
 
-        unnamed_1: packed union {
+        unnamed_1: extern union {
             bp_addr: u64,
             kprobe_func: u64,
             uprobe_path: u64,
             config1: u64,
-        },
+        } = .{ .bp_addr = 0 },
 
-        unnamed_2: packed union {
+        unnamed_2: extern union {
             bp_len: u64,
             kprobe_addr: u64,
             probe_offset: u64,
             config2: u64,
-        },
+        } = .{ .bp_len = 0 },
 
-        branch_sample_type: u64,
-        sample_regs_user: u64,
-        sample_stack_user: u64,
+        branch_sample_type: u64 = 0,
+        sample_regs_user: u64 = 0,
+        sample_stack_user: u64 = 0,
 
-        clockid: i32,
-        sample_regs_intr: u64,
-        aux_watermark: u32,
-        sample_max_stack: u16,
-        _reserved_2: u16,
+        clockid: i32 = 0,
+        sample_regs_intr: u64 = 0,
+        aux_watermark: u32 = 0,
+        sample_max_stack: u16 = 0,
+        _reserved_2: u16 = 0,
     };
 
     pub const MmapPage = packed struct {
@@ -132,13 +136,13 @@ pub const event = struct {
         };
     };
 
-    pub fn open(attr: *Attr, pid: pid_t, cpu: i32, group_fd: i32) !fd_t {
+    pub fn open(attr: *const Attr, pid: pid_t, cpu: i32, group_fd: i32) !fd_t {
         const rc = std.os.linux.syscall5(
             .perf_event_open,
             @ptrToInt(attr),
-            @intCast(usize, pid),
+            if (pid == -1) std.math.maxInt(usize) else @intCast(usize, pid),
             @intCast(usize, cpu),
-            @intCast(usize, group_fd),
+            if (group_fd == -1) std.math.maxInt(usize) else @intCast(usize, group_fd),
             @enumToInt(Flag.fd_cloexec),
         );
         switch (rc) {
@@ -175,8 +179,6 @@ pub const Buffer = struct {
 
     const Self = @This();
 
-    // hacky including self here but we'll redesign this later
-    // TODO: runtime determination of page size, using std for now
     pub fn init(
         allocator: *Allocator,
         map: fd_t,
@@ -302,21 +304,20 @@ pub const CpuBuf = struct {
     allocator: *Allocator,
     fd: fd_t,
     pb: *Buffer,
-    base: []u8, // mmaped memory
+    base: []align(4096) u8, // mmaped memory
     buf: ?[]u8, // TODO: figure out, for reconstructing segmented data
     cpu: i32,
 
     const Self = @This();
 
     pub fn init(allocator: *Allocator, pb: *Buffer, cpu: i32) !CpuBuf {
-        // I hate this C stuff but it's contained for now
-        var attr = std.mem.zeroes(event.Attr);
-
-        attr.config = .count_sw_bpf_output;
-        attr.type = .software;
-        attr.sample_type = .raw;
-        attr.sample.period = 1;
-        attr.wakeup.events = 1;
+        const attr = event.Attr{
+            .config = .count_sw_bpf_output,
+            .type = .software,
+            .sample_type = .raw,
+            .sample = .{ .period = 1 },
+            .wakeup = .{ .events = 1 },
+        };
 
         const fd = try event.open(&attr, -1, cpu, -1);
         errdefer os.close(fd);
@@ -345,7 +346,7 @@ pub const CpuBuf = struct {
         }
 
         os.munmap(self.base);
-        event_disable(self.id) catch {};
+        event_disable(self.fd) catch {};
         os.close(self.fd);
     }
 };
