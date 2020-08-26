@@ -3,70 +3,37 @@ usingnamespace @import("common.zig");
 const std = @import("std");
 const perf = @import("perf.zig");
 const Link = @import("link.zig");
-
-const c = @cImport({
-    @cInclude("perf_event.h");
-});
-
+const BPF = std.os.linux.BPF;
 const fd_t = std.os.fd_t;
+
+name: []const u8,
+type: ?BPF.ProgType,
+insns: []BPF.Insn,
+fd: ?fd_t,
 
 const Self = @This();
 
-fd: fd_t,
-name: []const u8,
-type: Type,
-insns: []Insn,
-loaded: bool,
-expected_attach_type: AttachType,
-
-pub const Type = enum(u32) {
-    unspec,
-    socket_filter,
-    kprobe,
-    sched_cls,
-    sched_act,
-    tracepoint,
-    xdp,
-    perf_event,
-    cgroup_skb,
-    cgroup_sock,
-    lwt_in,
-    lwt_out,
-    lwt_xmit,
-    sock_ops,
-    sk_skb,
-    cgroup_device,
-    sk_msg,
-    raw_tracepoint,
-    cgroup_sock_addr,
-    lwt_seg6local,
-    lirc_mode2,
-    sk_reuseport,
-    flow_dissector,
-    cgroup_sysctl,
-    raw_tracepoint_writable,
-    cgroup_sockopt,
-    tracing,
-    struct_ops,
-    ext,
-    lsm,
-};
-
 // TODO: name vs title
 pub fn load(self: *Self, license: []const u8, kern_version: u32) !void {
-    if (self.loaded) {
+    if (self.fd != null) {
         return error.AlreadyLoaded;
     }
 
-    // TODO: finish
+    var buf: [4096]u8 = undefined;
+    buf[0] = 0;
+
+    var log = BPF.Log{
+        .level = 7,
+        .buf = &buf,
+    };
+
+    self.fd = try BPF.prog_load(self.type.?, self.insns, &log, license, kern_version);
+    std.debug.print("prog fd: {}\n", .{self.fd});
+    errdefer std.io.getStdErr().outStream().print("{}\n", .{@ptrCast([*:0]u8, buf)});
 }
 
 pub fn unload(self: *Self) void {
-    for (self.instances) |instance| {
-        try std.os.close(instance);
-    }
-
-    self.instances.len = 0;
+    close(self.fd);
 }
 
 pub fn pin_instance(self: *Self, path: []const u8, instance: fd_t) !void {}

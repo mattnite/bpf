@@ -1,2 +1,2 @@
-pub const user = @import("src/user.zig");
-pub const kern = @import("src/kern.zig");
+pub const Object = @import("src/object.zig");
+pub const elf = @import("src/elf.zig");
