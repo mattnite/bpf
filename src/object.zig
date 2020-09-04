@@ -276,7 +276,6 @@ pub fn load(self: *Self) !void {
     // init kern struct ops maps
     for (self.maps.items) |*m| {
         m.fd = try BPF.map_create(m.def.type, m.def.key_size, m.def.value_size, m.def.max_entries);
-        std.debug.print("map fd: {}\n", .{m.fd});
         errdefer os.close(m.fd);
     }
 
@@ -328,9 +327,7 @@ pub fn find_prog(self: *Self, name: []const u8) ?fd_t {
 }
 
 pub fn find_map(self: *Self, name: []const u8) ?fd_t {
-    std.debug.print("looking for map: {}\n", .{name});
     return for (self.maps.items) |m| {
-        std.debug.print("looking at {}\n", .{m.name});
         if (mem.eql(u8, m.name, name)) {
             break m.fd;
         }
