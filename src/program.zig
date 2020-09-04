@@ -28,7 +28,6 @@ pub fn load(self: *Self, license: []const u8, kern_version: u32) !void {
     };
 
     self.fd = try BPF.prog_load(self.type.?, self.insns, &log, license, kern_version);
-    std.debug.print("prog fd: {}\n", .{self.fd});
     errdefer std.io.getStdErr().outStream().print("{}\n", .{@ptrCast([*:0]u8, buf)});
 }
 

@@ -7,8 +7,8 @@ pub fn offset_to_value(comptime T: type, buf: []const u8, offset: usize) T {
     return ret;
 }
 
-fn get_header(comptime elf: []u8) *Elf64_Ehdr {
-    return @ptrCast(*Elf64_Ehdr, elf.ptr);
+fn get_header(comptime elf: []const u8) *const Elf64_Ehdr {
+    return @ptrCast(*const Elf64_Ehdr, elf.ptr);
 }
 
 fn strtab_get_str(strtab: []const u8, offset: usize) []const u8 {
@@ -28,12 +28,12 @@ pub fn has_section(comptime elf: []const u8, comptime name: []const u8) bool {
             break offset_to_value([section.sh_size]u8, elf, section.sh_offset);
     } else @compileError("strtab not found");
 
-    for (sections) |section| {
+    return for (sections) |section| {
         const section_name = strtab_get_str(&strtab, section.sh_name);
         if (std.mem.eql(u8, section_name, name)) {
-            return true;
+            break true;
         }
-    } else return false;
+    } else false;
 }
 
 pub fn has_map(comptime elf: []const u8, comptime name: []const u8) bool {
@@ -48,21 +48,21 @@ pub fn has_map(comptime elf: []const u8, comptime name: []const u8) bool {
 
     const symtab = for (sections) |section| {
         if (section.sh_type == SHT_SYMTAB) {
-            break offset_to_value([section.sh_size]u8, probe, section.sh_offset);
+            break offset_to_value([section.sh_size]u8, elf, section.sh_offset);
         }
     } else @compileError("symtab not found");
 
     const maps = for (sections) |section| {
         const section_name = strtab_get_str(&strtab, section.sh_name);
-        if (std.mem.eql(u8, section_name, ".maps")) {
-            break offset_to_value([section.sh_size]u8, probe, section.sh_offset);
+        if (std.mem.eql(u8, section_name, "maps") or std.mem.eql(u8, section_name, ".maps")) {
+            break offset_to_value([section.sh_size]u8, elf, section.sh_offset);
         }
     } else @compileError(".maps section not found");
 
     const btf = for (sections) |section| {
         const section_name = strtab_get_str(&strtab, section.sh_name);
         if (std.mem.eql(u8, section_name, ".BTF")) {
-            break offset_to_value([section.sh_size]u8, probe, section.sh_offset);
+            break offset_to_value([section.sh_size]u8, elf, section.sh_offset);
         }
     } else @compileError("failed to find .maps section");
 
