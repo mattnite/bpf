@@ -6,12 +6,18 @@ loaded by the other.
 
 # Roadmap
 
-- zigify userspace API
-- zigify bpf helpers
-- determine how section naming translates into program types and events
+stdlib work:
+- document all map types
+- document all cmd types
+- document all program and attach types
+- zigify cmds
+	- determine all possible errnos
+- zigify bpf helpers (include documentation)
 - get layout for members of structs found in bpf helpers
-- get list of structs passed as contexts depending on the program type
+
+this lib work:
+- determine how section naming translates into program types and events
 - typify section naming
 - figure out btf and map relocations
-- perf buffer and ring buffer APIs
 - typify maps
+- @Type(.Struct) object

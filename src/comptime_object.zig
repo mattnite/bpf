@@ -16,12 +16,9 @@ pub fn ComptimeObject(comptime path: []const u8) type {
     return struct {
         allocator: *Allocator,
         name: []const u8,
-        license: anytype,
+        license: []const u8,
         kern_version: u32,
 
-        //maps_cap: usize,
-        //kconfig: []const u8,
-        //kconfig_map_idx: isize,
         loaded: bool,
         //has_pseudo_calls: bool,
         //btf: btf.Header,
@@ -29,14 +26,10 @@ pub fn ComptimeObject(comptime path: []const u8) type {
         //btf_ext: btf.ext.Header,
         // TODO: later cap: Capabilities,
         //cap: u64,
-        //path: []const u8,
-        maps: anytype,
 
         const Self = @This();
-        pub const programs = [_]Program{};
 
-        pub const externs = [_]ExternDesc{};
-
+        /// initialize members with data known from the elf
         pub fn init(allocator: *Allocator) Self {
             return .{
                 .allocator = allocator,
@@ -48,8 +41,11 @@ pub fn ComptimeObject(comptime path: []const u8) type {
             };
         }
 
+        /// runtime operations, map_create
         pub fn load(self: *Self) !void {
-            return load(self);
+            inline for (std.meta.fields(self.maps)) |field| {
+                try @field(self.maps, field.name).create();
+            }
         }
 
         pub fn unload(self: *Self) void {
