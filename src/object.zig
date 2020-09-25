@@ -62,6 +62,7 @@ const Elf = struct {
 
     const Section = struct {
         header: Elf64_Shdr,
+        idx: usize,
         data: []u8,
     };
 
@@ -138,6 +139,7 @@ const Elf = struct {
 
             section.* = Section{
                 .header = section_header,
+                .idx = i,
                 .data = try allocator.alloc(u8, section_header.sh_size),
             };
 
@@ -207,9 +209,12 @@ fn init_maps(allocator: *Allocator, elf: *const Elf) !std.ArrayListUnmanaged(map
             if (symbol.st_shndx != maps_idx)
                 continue;
 
+            std.debug.print("got a map symbol\n", .{});
+            std.debug.print("size: {}\n", .{symbol.st_size});
             // size must be a multiple of MapDef size
-            if (symbol.st_size != @sizeOf(MapDef))
-                return error.InvalidMapsSize;
+            //if (symbol.st_size != @sizeOf(MapDef)) {
+            //    return error.InvalidMapsSize;
+            //}
 
             try ret.append(allocator, map.Info{
                 .name = elf.get_str(symbol.st_name),
@@ -240,6 +245,67 @@ fn init_progs(allocator: *Allocator, elf: *const Elf) !std.ArrayListUnmanaged(Pr
     return ret;
 }
 
+fn collect_st_ops_relos(self: *Self, section: *Elf.Section) !void {
+    const name = self.elf.get_section_name(section);
+    std.debug.print("got st ops relo: {}\n", .{name});
+}
+fn collect_map_relos(self: *Self, section: *Elf.Section) !void {
+    const name = self.elf.get_section_name(section);
+    std.debug.print("got btf map relo: {}\n", .{name});
+}
+
+fn collect_prog_relos(self: *Self, section: *Elf.Section) !void {
+    const name = self.elf.get_section_name(section);
+    var target = &self.elf.sections[section.header.sh_info];
+
+    const num = section.header.sh_size / section.header.sh_entsize;
+    for (mem.bytesAsSlice(Elf64_Rel, section.data)) |rel, i| {
+
+        // get symbol
+        const sym = self.elf.get_sym_idx(@truncate(u32, rel.r_info >> 32));
+        std.debug.print("{x}\n", .{rel.r_info});
+        std.debug.print("{}\n", .{rel});
+        const insn_idx = rel.r_offset / @sizeOf(BPF.Insn);
+
+        const sym_name = if (@truncate(u4, rel.r_info) == STT_SECTION and sym.st_name == 0)
+            name
+        else
+            self.elf.get_str(sym.st_name);
+
+        std.debug.print("sec {}: relo #{}: insn #{} against '{}'\n", .{ name, i, insn_idx, sym_name });
+        std.debug.print("{}\n", .{sym});
+    }
+}
+
+fn collect_relos(self: *Self) !void {
+    std.debug.print("num relo sections: {}\n", .{self.elf.relos.items.len});
+    for (self.elf.relos.items) |section| {
+        std.debug.print("{}\n", .{section.header});
+
+        if (section.header.sh_type != SHT_REL) unreachable;
+
+        const idx = section.header.sh_info;
+
+        if (self.elf.st_ops) |st_ops| {
+            if (idx == st_ops.idx) {
+                try self.collect_st_ops_relos(section);
+                return;
+            }
+        }
+
+        if (self.elf.btf_maps) |btf_maps| {
+            if (idx == btf_maps.idx) {
+                try self.collect_map_relos(section);
+                return;
+            }
+        }
+
+        try self.collect_prog_relos(section);
+
+        // sort prog relos for some reason
+    }
+}
+
 pub fn init(allocator: *Allocator, elf_obj: []const u8) !Self {
     // check endianness
     //     error if it doesn't match
@@ -248,22 +314,28 @@ pub fn init(allocator: *Allocator, elf_obj: []const u8) !Self {
     // finalize btf
     // init maps
     const maps = try init_maps(allocator, &elf);
+
     //     init user btf maps
     //     init global data maps
     //     init kconfig kconfig map
     //     init struct ops maps
     const progs = try init_progs(allocator, &elf);
-    // collect relloc
-    return Self{
+
+    var ret = Self{
         .allocator = allocator,
         .elf = elf,
         .maps = maps,
         .progs = progs,
     };
+
+    try ret.collect_relos();
+    return ret;
 }
 
 pub fn deinit(self: *Self) void {
     self.elf.deinit(self.allocator);
+    self.maps.deinit(self.allocator);
+    self.progs.deinit(self.allocator);
 }
 
 pub fn load(self: *Self) !void {
@@ -275,13 +347,16 @@ pub fn load(self: *Self) !void {
     // load vmlinux btf
     // init kern struct ops maps
     for (self.maps.items) |*m| {
-        m.fd = try BPF.map_create(m.def.type, m.def.key_size, m.def.value_size, m.def.max_entries);
+        m.fd = try BPF.map_create(@intToEnum(BPF.MapType, m.def.type), m.def.key_size, m.def.value_size, m.def.max_entries);
+        std.debug.print("made map: {}\n", .{m.fd});
         errdefer os.close(m.fd);
     }
 
     for (self.progs.items) |*prog| {
         const rel_name = try std.mem.join(self.allocator, "", &[_][]const u8{ ".rel", prog.name });
         defer self.allocator.free(rel_name);
+
+        std.debug.print("rel_name: {}\n", .{rel_name});
 
         const rel_section: *Elf.Section = for (self.elf.relos.items) |relo| {
             if (mem.eql(u8, self.elf.get_section_name(relo), rel_name)) {
@@ -292,6 +367,8 @@ pub fn load(self: *Self) !void {
         for (std.mem.bytesAsSlice(Elf64_Rel, rel_section.data)) |relo| {
             const insn_idx = relo.r_offset / @sizeOf(BPF.Insn);
             const symbol = self.elf.get_sym_idx(@truncate(u32, relo.r_info >> 32));
+            // TODO: make get_str return optional
+            std.debug.print("symbol: {}\n", .{symbol});
             const map_name = self.elf.get_str(symbol.st_name);
 
             const map_fd = for (self.maps.items) |m| {
