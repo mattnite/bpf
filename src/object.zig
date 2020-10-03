@@ -209,8 +209,8 @@ fn init_maps(allocator: *Allocator, elf: *const Elf) !std.ArrayListUnmanaged(map
             if (symbol.st_shndx != maps_idx)
                 continue;
 
-            std.debug.print("got a map symbol\n", .{});
-            std.debug.print("size: {}\n", .{symbol.st_size});
+            //std.debug.print("got a map symbol\n", .{});
+            //std.debug.print("size: {}\n", .{symbol.st_size});
             // size must be a multiple of MapDef size
             //if (symbol.st_size != @sizeOf(MapDef)) {
             //    return error.InvalidMapsSize;
@@ -247,11 +247,11 @@ fn init_progs(allocator: *Allocator, elf: *const Elf) !std.ArrayListUnmanaged(Pr
 
 fn collect_st_ops_relos(self: *Self, section: *Elf.Section) !void {
     const name = self.elf.get_section_name(section);
-    std.debug.print("got st ops relo: {}\n", .{name});
+    //std.debug.print("got st ops relo: {}\n", .{name});
 }
 fn collect_map_relos(self: *Self, section: *Elf.Section) !void {
     const name = self.elf.get_section_name(section);
-    std.debug.print("got btf map relo: {}\n", .{name});
+    //std.debug.print("got btf map relo: {}\n", .{name});
 }
 
 fn collect_prog_relos(self: *Self, section: *Elf.Section) !void {
@@ -263,8 +263,8 @@ fn collect_prog_relos(self: *Self, section: *Elf.Section) !void {
 
         // get symbol
         const sym = self.elf.get_sym_idx(@truncate(u32, rel.r_info >> 32));
-        std.debug.print("{x}\n", .{rel.r_info});
-        std.debug.print("{}\n", .{rel});
+        //std.debug.print("{x}\n", .{rel.r_info});
+        //std.debug.print("{}\n", .{rel});
         const insn_idx = rel.r_offset / @sizeOf(BPF.Insn);
 
         const sym_name = if (@truncate(u4, rel.r_info) == STT_SECTION and sym.st_name == 0)
@@ -272,16 +272,15 @@ fn collect_prog_relos(self: *Self, section: *Elf.Section) !void {
         else
             self.elf.get_str(sym.st_name);
 
-        std.debug.print("sec {}: relo #{}: insn #{} against '{}'\n", .{ name, i, insn_idx, sym_name });
-        std.debug.print("{}\n", .{sym});
+        //std.debug.print("sec {}: relo #{}: insn #{} against '{}'\n", .{ name, i, insn_idx, sym_name });
+        //std.debug.print("{}\n", .{sym});
     }
 }
 
 fn collect_relos(self: *Self) !void {
-    std.debug.print("num relo sections: {}\n", .{self.elf.relos.items.len});
+    //std.debug.print("num relo sections: {}\n", .{self.elf.relos.items.len});
     for (self.elf.relos.items) |section| {
-        std.debug.print("{}\n", .{section.header});
-
+        //std.debug.print("{}\n", .{section.header});
         if (section.header.sh_type != SHT_REL) unreachable;
 
         const idx = section.header.sh_info;
@@ -348,7 +347,7 @@ pub fn load(self: *Self) !void {
     // init kern struct ops maps
     for (self.maps.items) |*m| {
         m.fd = try BPF.map_create(@intToEnum(BPF.MapType, m.def.type), m.def.key_size, m.def.value_size, m.def.max_entries);
-        std.debug.print("made map: {}\n", .{m.fd});
+        //std.debug.print("made map: {}\n", .{m.fd});
         errdefer os.close(m.fd);
     }
 
@@ -356,7 +355,7 @@ pub fn load(self: *Self) !void {
         const rel_name = try std.mem.join(self.allocator, "", &[_][]const u8{ ".rel", prog.name });
         defer self.allocator.free(rel_name);
 
-        std.debug.print("rel_name: {}\n", .{rel_name});
+        //std.debug.print("rel_name: {}\n", .{rel_name});
 
         const rel_section: *Elf.Section = for (self.elf.relos.items) |relo| {
             if (mem.eql(u8, self.elf.get_section_name(relo), rel_name)) {
@@ -368,7 +367,7 @@ pub fn load(self: *Self) !void {
             const insn_idx = relo.r_offset / @sizeOf(BPF.Insn);
             const symbol = self.elf.get_sym_idx(@truncate(u32, relo.r_info >> 32));
             // TODO: make get_str return optional
-            std.debug.print("symbol: {}\n", .{symbol});
+            //std.debug.print("symbol: {}\n", .{symbol});
             const map_name = self.elf.get_str(symbol.st_name);
 
             const map_fd = for (self.maps.items) |m| {
@@ -387,7 +386,7 @@ pub fn load(self: *Self) !void {
 
 pub fn unload(self: *Self) void {
     for (self.progs.items) |*prog| {
-        os.close(prog.fd.?);
+        prog.unload();
     }
 
     for (self.maps.items) |*m| {

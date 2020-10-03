@@ -19,7 +19,7 @@ pub fn load(self: *Self, license: []const u8, kern_version: u32) !void {
         return error.AlreadyLoaded;
     }
 
-    var buf: [4096]u8 = undefined;
+    var buf: [10000]u8 = undefined;
     buf[0] = 0;
 
     var log = BPF.Log{
@@ -32,7 +32,7 @@ pub fn load(self: *Self, license: []const u8, kern_version: u32) !void {
 }
 
 pub fn unload(self: *Self) void {
-    close(self.fd);
+    if (self.fd) |fd| std.os.close(fd);
 }
 
 pub fn pin_instance(self: *Self, path: []const u8, instance: fd_t) !void {}

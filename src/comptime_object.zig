@@ -52,21 +52,13 @@ pub fn ComptimeObject(comptime path: []const u8) type {
             return unload(self);
         }
 
-        pub fn get_map(comptime self: *const Self, comptime T: type, comptime name: []const u8) comptime T {
-            return for (self.maps) |m| {
-                if (std.mem.eql(u8, name, m.name)) {
-                    if (m.def.key_size != @sizeOf(T.Key))
-                        @compileError("Key size does not match for " ++ name);
-
-                    if (m.def.value_size != @sizeOf(T.Value))
-                        @compileError("Value size does not match");
-
-                    break T{ .fd = m.fd };
-                }
-            } else @compileError("Failed to get map '" ++ name ++ "'");
+        pub fn get_map(comptime self: *const Self, comptime T: type, comptime name: []const u8) *MapInfo {
+            return &@field(self.maps, name);
         }
 
-        pub fn get_prog(comptime self: *Self, comptime name: []const u8) *Program {}
+        pub fn get_prog(self: *Self, comptime name: []const u8) *Program {
+            return &@field(self.progs, name);
+        }
         pub fn set_rodata(self: *Self, name: []const u8, val: anytype) void {}
     };
 }
