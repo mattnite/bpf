@@ -1,18 +1,16 @@
 usingnamespace @import("elf.zig");
 const std = @import("std");
-const map = @import("map.zig");
 const Program = @import("program.zig");
 
-const os = std.os;
 const mem = std.mem;
-const MapDef = std.os.linux.BPF.kern.MapDef;
-const BPF = std.os.linux.BPF;
-const Allocator = mem.Allocator;
+const os = std.os;
 const fd_t = std.os.fd_t;
+const BPF = std.os.linux.BPF;
+const MapDef = std.os.linux.BPF.kern.MapDef;
 
-allocator: *Allocator,
+allocator: *mem.Allocator,
 elf: Elf,
-maps: std.ArrayListUnmanaged(map.Info),
+maps: std.ArrayListUnmanaged(BPF.MapInfo),
 progs: std.ArrayListUnmanaged(Program),
 
 const Self = @This();
@@ -86,7 +84,7 @@ const Elf = struct {
         return self.get_str(section.header.sh_name);
     }
 
-    fn search_sections(self: *@This(), allocator: *Allocator) !void {
+    fn search_sections(self: *@This(), allocator: *mem.Allocator) !void {
         for (self.sections) |*section| {
             const name = self.get_section_name(section);
 
@@ -124,7 +122,7 @@ const Elf = struct {
         }
     }
 
-    pub fn init(allocator: *Allocator, elf_buf: []const u8) !Elf {
+    pub fn init(allocator: *mem.Allocator, elf_buf: []const u8) !Elf {
         var header = offset_to_value(Elf64_Ehdr, elf_buf, 0);
         var sections = try allocator.alloc(Section, header.e_shnum);
         var strtab: ?*Section = null;
@@ -184,7 +182,7 @@ const Elf = struct {
         return ret;
     }
 
-    pub fn deinit(self: *@This(), allocator: *Allocator) void {
+    pub fn deinit(self: *@This(), allocator: *mem.Allocator) void {
         self.relos.deinit(allocator);
         for (self.sections) |section| {
             allocator.free(section.data);
@@ -194,8 +192,8 @@ const Elf = struct {
     }
 };
 
-fn init_maps(allocator: *Allocator, elf: *const Elf) !std.ArrayListUnmanaged(map.Info) {
-    var ret = std.ArrayListUnmanaged(map.Info){};
+fn init_maps(allocator: *mem.Allocator, elf: *const Elf) !std.ArrayListUnmanaged(BPF.MapInfo) {
+    var ret = std.ArrayListUnmanaged(BPF.MapInfo){};
     errdefer ret.deinit(allocator);
 
     if (elf.maps) |maps| {
@@ -216,7 +214,7 @@ fn init_maps(allocator: *Allocator, elf: *const Elf) !std.ArrayListUnmanaged(map
             //    return error.InvalidMapsSize;
             //}
 
-            try ret.append(allocator, map.Info{
+            try ret.append(allocator, BPF.MapInfo{
                 .name = elf.get_str(symbol.st_name),
                 .def = offset_to_value(MapDef, maps.data, symbol.st_value),
                 .fd = null,
@@ -227,7 +225,7 @@ fn init_maps(allocator: *Allocator, elf: *const Elf) !std.ArrayListUnmanaged(map
     return ret;
 }
 
-fn init_progs(allocator: *Allocator, elf: *const Elf) !std.ArrayListUnmanaged(Program) {
+fn init_progs(allocator: *mem.Allocator, elf: *const Elf) !std.ArrayListUnmanaged(Program) {
     var ret = std.ArrayListUnmanaged(Program){};
     errdefer ret.deinit(allocator);
 
@@ -305,7 +303,7 @@ fn collect_relos(self: *Self) !void {
     }
 }
 
-pub fn init(allocator: *Allocator, elf_obj: []const u8) !Self {
+pub fn init(allocator: *mem.Allocator, elf_obj: []const u8) !Self {
     // check endianness
     //     error if it doesn't match
     const elf = try Elf.init(allocator, elf_obj);
