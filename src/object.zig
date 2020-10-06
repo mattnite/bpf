@@ -42,6 +42,7 @@ const Elf = struct {
     symtab: *Section,
     relos: std.ArrayListUnmanaged(*Section),
     progs: std.ArrayListUnmanaged(*Section),
+    shstrtab: ?*Section = null,
     license: ?*Section = null,
     version: ?*Section = null,
     maps: ?*Section = null,
@@ -70,29 +71,33 @@ const Elf = struct {
         data: []u8,
     };
 
-    pub fn get_sym_idx(self: *const @This(), idx: usize) Elf64_Sym {
+    pub fn get_sym_idx(self: Elf, idx: usize) Elf64_Sym {
         return std.mem.bytesAsSlice(Elf64_Sym, self.symtab.data)[idx];
     }
 
-    pub fn get_sym_offset(self: *const @This(), offset: usize) Elf64_Sym {
+    pub fn get_sym_offset(self: Elf, offset: usize) Elf64_Sym {
         return self.get_sym_idx(offset / @sizeOf(Elf64_Sym));
     }
 
-    pub fn get_str(self: *const @This(), offset: usize) []const u8 {
-        return for (self.strtab.data[offset..]) |c, i| {
+    fn find_str_impl(section: *const Section, offset: usize) ?[]const u8 {
+        return for (section.data[offset..]) |c, i| {
             if (c == 0) {
-                break self.strtab.data[offset .. offset + i];
+                break section.data[offset .. offset + i];
             }
-        } else "";
+        } else null;
     }
 
-    pub fn get_section_name(self: *const @This(), section: *const Section) []const u8 {
-        return self.get_str(section.header.sh_name);
+    pub fn find_str(self: Elf, offset: usize) ?[]const u8 {
+        return find_str_impl(self.strtab, offset);
+    }
+
+    pub fn find_section_name(self: Elf, section: *const Section) ?[]const u8 {
+        return find_str_impl(self.shstrtab orelse self.strtab, section.header.sh_name);
     }
 
     fn search_sections(self: *@This(), allocator: *mem.Allocator) !void {
         for (self.sections) |*section| {
-            const name = self.get_section_name(section);
+            const name = self.find_section_name(section) orelse continue;
 
             if (mem.eql(u8, name, "license")) {
                 self.license = section;
@@ -133,6 +138,7 @@ const Elf = struct {
         var sections = try allocator.alloc(Section, header.e_shnum);
         var strtab: ?*Section = null;
         var symtab: ?*Section = null;
+        var shstrtab: ?*Section = null;
 
         for (sections) |*section, i| {
             var section_header = offset_to_value(
@@ -152,12 +158,20 @@ const Elf = struct {
                 section_header.sh_size]);
 
             // search for special sections
-            switch (section_header.sh_type) {
+            switch (section.header.sh_type) {
                 SHT_STRTAB => {
                     if (strtab == null) {
                         strtab = section;
+                    } else if (shstrtab == null) {
+                        // shstrtab will contain its own name
+                        if (mem.indexOf(u8, strtab.?.data, ".shstrtab") != null) {
+                            shstrtab = strtab;
+                            strtab = section;
+                        } else if (mem.indexOf(u8, section.data, ".shstrtab") != null) {
+                            shstrtab = section;
+                        }
                     } else {
-                        return error.MultipleStrtab;
+                        return error.TooManyStrTabs;
                     }
                 },
                 SHT_SYMTAB => {
@@ -177,8 +191,9 @@ const Elf = struct {
         var ret = Elf{
             .header = header,
             .sections = sections,
-            .strtab = strtab.?,
-            .symtab = symtab.?,
+            .strtab = strtab orelse unreachable,
+            .shstrtab = shstrtab,
+            .symtab = symtab orelse unreachable,
             .relos = std.ArrayListUnmanaged(*Section){},
             .progs = std.ArrayListUnmanaged(*Section){},
         };
@@ -213,15 +228,8 @@ fn init_maps(allocator: *mem.Allocator, elf: *const Elf) !std.ArrayListUnmanaged
             if (symbol.st_shndx != maps_idx)
                 continue;
 
-            //std.debug.print("got a map symbol\n", .{});
-            //std.debug.print("size: {}\n", .{symbol.st_size});
-            // size must be a multiple of MapDef size
-            //if (symbol.st_size != @sizeOf(MapDef)) {
-            //    return error.InvalidMapsSize;
-            //}
-
             try ret.append(allocator, MapInfo{
-                .name = elf.get_str(symbol.st_name),
+                .name = elf.find_str(symbol.st_name) orelse return error.NoMapName,
                 .def = offset_to_value(MapDef, maps.data, symbol.st_value),
                 .fd = null,
             });
@@ -236,9 +244,9 @@ fn init_progs(allocator: *mem.Allocator, elf: *const Elf) !std.ArrayListUnmanage
     errdefer ret.deinit(allocator);
 
     for (elf.progs.items) |prog| {
-        const name = elf.get_section_name(prog);
+        const name = elf.find_section_name(prog);
         try ret.append(allocator, Program{
-            .name = name,
+            .name = name orelse return error.NoProgName,
             // TODO: detect program type
             .type = .socket_filter,
             .insns = std.mem.bytesAsSlice(BPF.Insn, prog.data),
@@ -250,16 +258,16 @@ fn init_progs(allocator: *mem.Allocator, elf: *const Elf) !std.ArrayListUnmanage
 }
 
 fn collect_st_ops_relos(self: *Self, section: *Elf.Section) !void {
-    const name = self.elf.get_section_name(section);
+    const name = self.elf.find_section_name(section);
     //std.debug.print("got st ops relo: {}\n", .{name});
 }
 fn collect_map_relos(self: *Self, section: *Elf.Section) !void {
-    const name = self.elf.get_section_name(section);
+    const name = self.elf.find_section_name(section);
     //std.debug.print("got btf map relo: {}\n", .{name});
 }
 
 fn collect_prog_relos(self: *Self, section: *Elf.Section) !void {
-    const name = self.elf.get_section_name(section);
+    const name = self.elf.find_section_name(section);
     var target = &self.elf.sections[section.header.sh_info];
 
     const num = section.header.sh_size / section.header.sh_entsize;
@@ -267,17 +275,12 @@ fn collect_prog_relos(self: *Self, section: *Elf.Section) !void {
 
         // get symbol
         const sym = self.elf.get_sym_idx(@truncate(u32, rel.r_info >> 32));
-        //std.debug.print("{x}\n", .{rel.r_info});
-        //std.debug.print("{}\n", .{rel});
         const insn_idx = rel.r_offset / @sizeOf(BPF.Insn);
 
         const sym_name = if (@truncate(u4, rel.r_info) == STT_SECTION and sym.st_name == 0)
             name
         else
-            self.elf.get_str(sym.st_name);
-
-        //std.debug.print("sec {}: relo #{}: insn #{} against '{}'\n", .{ name, i, insn_idx, sym_name });
-        //std.debug.print("{}\n", .{sym});
+            self.elf.find_str(sym.st_name);
     }
 }
 
@@ -359,10 +362,9 @@ pub fn load(self: *Self) !void {
         const rel_name = try std.mem.join(self.allocator, "", &[_][]const u8{ ".rel", prog.name });
         defer self.allocator.free(rel_name);
 
-        //std.debug.print("rel_name: {}\n", .{rel_name});
-
         const rel_section: *Elf.Section = for (self.elf.relos.items) |relo| {
-            if (mem.eql(u8, self.elf.get_section_name(relo), rel_name)) {
+            const section_name = self.elf.find_section_name(relo) orelse continue;
+            if (mem.eql(u8, section_name, rel_name)) {
                 break relo;
             }
         } else continue;
@@ -370,9 +372,7 @@ pub fn load(self: *Self) !void {
         for (std.mem.bytesAsSlice(Elf64_Rel, rel_section.data)) |relo| {
             const insn_idx = relo.r_offset / @sizeOf(BPF.Insn);
             const symbol = self.elf.get_sym_idx(@truncate(u32, relo.r_info >> 32));
-            // TODO: make get_str return optional
-            //std.debug.print("symbol: {}\n", .{symbol});
-            const map_name = self.elf.get_str(symbol.st_name);
+            const map_name = self.elf.find_str(symbol.st_name) orelse continue;
 
             const map_fd = for (self.maps.items) |m| {
                 if (mem.eql(u8, m.name, map_name)) {

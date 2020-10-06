@@ -19,7 +19,7 @@ const Tag = enum {
 };
 
 pub const Event = union(Tag) {
-    sample: []u8,
+    sample: std.ArrayList(u8),
     lost: usize,
 };
 
@@ -71,17 +71,17 @@ const RingBuffer = struct {
                 const sample_size = @ptrCast(*const u32, @alignCast(@alignOf(*const u32), &self.mmap[offset])).*;
                 const sample_start = mem.page_size + ((start + @sizeOf(perf.SampleRaw)) % size);
 
-                var buf = try allocator.alloc(u8, sample_size);
+                var sample = try std.ArrayList(u8).initCapacity(allocator, sample_size);
                 if (sample_start + sample_size > self.mmap.len) {
                     const first_len = self.mmap.len - sample_start;
                     const second_len = sample_size - first_len;
-                    mem.copy(u8, buf, self.mmap[sample_start..]);
-                    mem.copy(u8, buf[first_len..], self.mmap[mem.page_size .. mem.page_size + second_len]);
+                    sample.appendSliceAssumeCapacity(self.mmap[sample_start..]);
+                    sample.appendSliceAssumeCapacity(self.mmap[mem.page_size .. mem.page_size + second_len]);
                 } else {
-                    mem.copy(u8, buf, self.mmap[sample_start .. sample_start + sample_size]);
+                    sample.appendSliceAssumeCapacity(self.mmap[sample_start .. sample_start + sample_size]);
                 }
 
-                break :blk .{ .sample = buf };
+                break :blk .{ .sample = sample };
             },
             perf.RECORD_LOST => blk: {
                 const offset = mem.page_size + ((start + @byteOffsetOf(perf.SampleLost, "lost")) % size);
@@ -212,8 +212,8 @@ pub fn deinit(self: *Self) void {
 /// The PerfBuffer emits the Payload type which either reports a "raw
 /// sample" (regular data from BPF program) or "lost sample" -- a report of
 /// how many events were overwritten. In the case of the raw sample, the
-/// data is allocated by the PerfBuffer's allocator, and it is up to the
-/// user to free it.
+/// data is allocated and ownership is transfered with this call, so it is the
+/// responsibility of the caller to clean it up
 pub fn get(self: *Self) Payload {
     return self.channel.get();
 }
