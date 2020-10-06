@@ -166,7 +166,7 @@ const CpuBuf = struct {
     }
 };
 
-pub fn init(allocator: *mem.Allocator, map: PerfEventArray, page_cnt: usize) !Self {
+pub fn init(allocator: *mem.Allocator, map: BPF.PerfEventArray, page_cnt: usize) !Self {
     // page count must be power of two
     if (@popCount(usize, page_cnt) != 1) {
         return error.PageCountSize;
