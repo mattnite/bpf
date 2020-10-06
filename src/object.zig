@@ -10,7 +10,7 @@ const MapDef = std.os.linux.BPF.kern.MapDef;
 
 allocator: *mem.Allocator,
 elf: Elf,
-maps: std.ArrayListUnmanaged(BPF.MapInfo),
+maps: std.ArrayListUnmanaged(MapInfo),
 progs: std.ArrayListUnmanaged(Program),
 
 const Self = @This();
@@ -27,6 +27,12 @@ const RelocDesc = struct {
         relo_extern,
         call,
     };
+};
+
+const MapInfo = struct {
+    name: []const u8,
+    fd: ?fd_t,
+    def: MapDef,
 };
 
 const Elf = struct {
@@ -192,8 +198,8 @@ const Elf = struct {
     }
 };
 
-fn init_maps(allocator: *mem.Allocator, elf: *const Elf) !std.ArrayListUnmanaged(BPF.MapInfo) {
-    var ret = std.ArrayListUnmanaged(BPF.MapInfo){};
+fn init_maps(allocator: *mem.Allocator, elf: *const Elf) !std.ArrayListUnmanaged(MapInfo) {
+    var ret = std.ArrayListUnmanaged(MapInfo){};
     errdefer ret.deinit(allocator);
 
     if (elf.maps) |maps| {
@@ -214,7 +220,7 @@ fn init_maps(allocator: *mem.Allocator, elf: *const Elf) !std.ArrayListUnmanaged
             //    return error.InvalidMapsSize;
             //}
 
-            try ret.append(allocator, BPF.MapInfo{
+            try ret.append(allocator, MapInfo{
                 .name = elf.get_str(symbol.st_name),
                 .def = offset_to_value(MapDef, maps.data, symbol.st_value),
                 .fd = null,
