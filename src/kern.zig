@@ -221,6 +221,47 @@ pub fn get_current_comm(buf: []u8) !void {
     }
 }
 
+/// Copy a null terminated string from an unsafe user address *unsafe_ptr* to
+/// *dst*. The *size* should include the terminating NUL byte. In case the
+/// string length is smaller than *size*, the target is not padded with further
+/// NUL bytes. If the string length is larger than *size*, just *size*-1 bytes
+/// are copied and the last byte is set to NUL.
+///
+/// On success, the length of the copied string is returned. This makes this
+/// helper useful in tracing programs for reading strings, and more importantly
+/// to get its length at runtime. See the following snippet:
+///
+/// ::
+///
+/// 	SEC("kprobe/sys_open")
+/// 	void bpf_sys_open(struct pt_regs *ctx) {
+/// 	    char buf[PATHLEN]; // PATHLEN is defined to 256
+/// 	    int res = bpf_probe_read_user_str(buf, sizeof(buf), ctx->di);
+/// 		// Consume buf, for example push it to
+/// 		// userspace via bpf_perf_event_output(); we
+/// 		// can use res (the string length) as event
+/// 		// size, after checking its boundaries.
+/// 	}
+///
+/// In comparison, using **bpf_probe_read_user**\ () helper here instead to read
+/// the string would require to estimate the length at compile time, and would
+/// often result in copying more memory than necessary.
+///
+/// Another useful use case is when parsing individual process arguments or
+/// individual environment variables navigating *current*\ **->mm->arg_start**
+/// and *current*\ **->mm->env_start**: using this helper and the return value,
+/// one can quickly iterate at the right offset of the memory area.
+///
+/// Return On success, the strictly positive length of the string, including the
+/// trailing NUL character. On error, a negative value.
+pub fn probe_read_user_str(dst: []u8, unsafe: [*:0]const u8) !usize {
+    const rc = helpers.probe_read_user_str(dst.ptr, @truncate(dst.len), unsafe_ptr);
+    return if (rc < 0)
+        error.Unknown
+    else
+        @bitCast(usize, rc);
+}
+
 pub const BpfSock = opaque {};
 pub const BpfSockAddr = opaque {};
 pub const FibLookup = opaque {};
