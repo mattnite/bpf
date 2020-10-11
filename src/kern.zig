@@ -255,7 +255,7 @@ pub fn get_current_comm(buf: []u8) !void {
 /// Return On success, the strictly positive length of the string, including the
 /// trailing NUL character. On error, a negative value.
 pub fn probe_read_user_str(dst: []u8, unsafe: [*:0]const u8) !usize {
-    const rc = helpers.probe_read_user_str(dst.ptr, @truncate(dst.len), unsafe_ptr);
+    const rc = helpers.probe_read_user_str(dst.ptr, @truncate(u32, dst.len), unsafe_ptr);
     return if (rc < 0)
         error.Unknown
     else
