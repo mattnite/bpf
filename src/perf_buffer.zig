@@ -1,8 +1,10 @@
 usingnamespace std.os.linux;
 const std = @import("std");
+const perf = @import("perf.zig");
+const PerfEventArray = @import("user.zig").PerfEventArray;
 
 const mem = std.mem;
-const Channel = std.event.Channel;
+const Channel = @import("channel.zig").Channel;
 
 allocator: *mem.Allocator,
 fd: fd_t,
@@ -166,7 +168,7 @@ const CpuBuf = struct {
     }
 };
 
-pub fn init(allocator: *mem.Allocator, map: BPF.PerfEventArray, page_cnt: usize) !Self {
+pub fn init(allocator: *mem.Allocator, map: PerfEventArray, page_cnt: usize) !Self {
     // page count must be power of two
     if (@popCount(usize, page_cnt) != 1) {
         return error.PageCountSize;

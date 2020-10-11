@@ -1,6 +1,8 @@
-// namespaces
-pub const elf = @import("src/elf.zig");
+const builtin = @import("builtin");
 
-// structs
-pub const Object = @import("src/object.zig");
-pub const PerfBuffer = @import("src/perf_buffer.zig");
+pub usingnamespace switch (builtin.arch) {
+    .bpfel, .bpfeb => @import("src/kern.zig"),
+    else => @import("src/user.zig"),
+};
+
+pub usingnamespace @import("src/flags.zig");

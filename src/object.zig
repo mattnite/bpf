@@ -6,7 +6,7 @@ const mem = std.mem;
 const os = std.os;
 const fd_t = std.os.fd_t;
 const BPF = std.os.linux.BPF;
-const MapDef = std.os.linux.BPF.kern.MapDef;
+const MapDef = @import("kern.zig").MapDef;
 
 allocator: *mem.Allocator,
 elf: Elf,
