@@ -1,5 +1,6 @@
 const std = @import("std");
-const BPF = std.os.linux.BPF;
+
+usingnamespace @import("common.zig");
 
 pub const helpers = @import("helpers.zig");
 pub const Tracepoint = @import("tracepoint.zig");
@@ -38,21 +39,23 @@ pub fn Map(
             return @ptrCast(?*Value, @alignCast(@alignOf(?*Value), helpers.map_lookup_elem(@ptrCast(*const MapDef, &self), &key)));
         }
 
-        /// Add or update the value of the entry associated to *key* in *map* with
-        /// *value*. *flags* is one of:
+        /// Add or update the value of the entry associated to `key` in `map`
+        /// with `value`. `update_type` is one of
         ///
-        /// **BPF_NOEXIST**
-        ///     The entry for *key* must not exist in the map.
-        /// **BPF_EXIST**
-        /// 	The entry for *key* must already exist in the map.
-        /// **BPF_ANY**
-        /// 	No condition on the existence of the entry for *key*.
+        /// `noexist`: The entry for *key* must not exist in the map.
+        /// `exist`: The entry for *key* must already exist in the map.
+        /// `any`: No condition on the existence of the entry for *key*.
         ///
-        /// Flag value **BPF_NOEXIST** cannot be used for maps of types
-        /// **BPF_MAP_TYPE_ARRAY** or **BPF_MAP_TYPE_PERCPU_ARRAY**  (all elements
+        /// Flag value `noexist` cannot be used for maps of types
+        /// `BPF_MAP_TYPE_ARRAY` or `BPF_MAP_TYPE_PERCPU_ARRAY` (all elements
         /// always exist), the helper would return an error.
-        pub fn update(self: Self, key: Key, value: Value, flags: u64) !void {
-            const rc = helpers.map_update_elem(@ptrCast(*const MapDef, &self), &key, &value, flags);
+        pub fn update(self: Self, update_type: MapUpdateType, key: Key, value: Value) !void {
+            const rc = helpers.map_update_elem(
+                @ptrCast(*const MapDef, &self),
+                &key,
+                &value,
+                @enumToInt(update_type),
+            );
             return switch (rc) {
                 0 => {},
                 else => error.Unknown,
