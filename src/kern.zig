@@ -2,6 +2,7 @@ const std = @import("std");
 const BPF = std.os.linux.BPF;
 
 pub const helpers = @import("helpers.zig");
+pub const Tracepoint = @import("tracepoint.zig");
 
 pub const MapDef = extern struct {
     type: u32,
