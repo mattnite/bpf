@@ -92,8 +92,8 @@ pub fn HashMap(
             return self.map.lookup(key);
         }
 
-        pub fn update(self: Self, key: Key, value: Value, flags: u64) !void {
-            return self.map.update(key, value, flags);
+        pub fn update(self: Self, update_type: MapUpdateType, key: Key, value: Value) !void {
+            return self.map.update(update_type, key, value);
         }
 
         pub fn delete(self: Self, key: Key) !void {
@@ -118,8 +118,8 @@ pub fn ArrayMap(comptime Value: type) type {
             return self.map.lookup(key);
         }
 
-        pub fn update(self: Self, key: u32, value: Value, flags: u64) !void {
-            return self.map.update(key, value, flags);
+        pub fn update(self: Self, update_type: MapUpdateType, key: u32, value: Value) !void {
+            return self.map.update(update_type, key, value);
         }
 
         pub fn delete(self: Self, key: u32) !void {
@@ -216,7 +216,7 @@ pub const get_current_uid_gid = helpers.get_current_uid_gid;
 /// success, the helper makes sure that the *buf* is NUL-terminated. On failure,
 /// it is filled with zeroes.
 pub fn get_current_comm(buf: []u8) !void {
-    if (helpers.get_current_comm(buf.ptr, buf.len) < 0) {
+    if (helpers.get_current_comm(buf.ptr, @truncate(u32, buf.len)) < 0) {
         return error.Unknown;
     }
 }
