@@ -22,7 +22,7 @@ pub fn Map(
 
         const Self = @This();
 
-        pub fn init(map_type: BPF.MapType, max_entries: u32, flags: u32) Self {
+        pub fn init(map_type: MapType, max_entries: u32, flags: u32) Self {
             return Self{
                 .def = MapDef{
                     .type = @enumToInt(map_type),
