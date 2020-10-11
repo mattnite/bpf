@@ -10,7 +10,7 @@ allocator: *mem.Allocator,
 fd: fd_t,
 contexts: std.ArrayListUnmanaged(Context),
 channel: Channel(Payload),
-channel_buf: []Payload,
+channel_buf: [256]Payload,
 running: std.atomic.Int(bool),
 
 const Self = @This();
@@ -178,8 +178,7 @@ pub fn init(allocator: *mem.Allocator, map: PerfEventArray, page_cnt: usize) !Se
 
     var ret: Self = undefined;
     ret.allocator = allocator;
-    ret.channel_buf = try allocator.alloc(Payload, cpu_count);
-    ret.channel.init(ret.channel_buf);
+    ret.channel.init(&ret.channel_buf);
     ret.running = std.atomic.Int(bool).init(false);
     errdefer ret.channel.deinit();
 
@@ -208,7 +207,6 @@ pub fn deinit(self: *Self) void {
 
     self.contexts.deinit(self.allocator);
     self.channel.deinit();
-    self.allocator.free(self.channel_buf);
 }
 
 /// The PerfBuffer emits the Payload type which either reports a "raw
