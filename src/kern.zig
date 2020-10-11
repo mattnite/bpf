@@ -183,6 +183,40 @@ pub const PerfEventArray = struct {
 /// time the system was suspended.
 pub const ktime_get_ns = helpers.ktime_get_ns;
 
+/// Get a pseudo-random number.
+///
+/// From a security point of view, this helper uses its own pseudo-random
+/// internal state, and cannot be used to infer the seed of other random
+/// functions in the kernel. However, it is essential to note that the generator
+/// used by the helper is not cryptographically secure.
+pub const get_prandom_u32 = helpers.get_prandom_u32;
+
+/// Get the SMP (symmetric multiprocessing) processor id. Note that all programs
+/// run with preemption disabled, which means that the SMP processor id is
+/// stable during all the execution of the program.
+pub const get_smp_processor_id = helpers.get_smp_processor_id;
+
+/// Return A 64-bit integer containing the current tgid and pid, and created as
+/// such:
+/// 	*current_task*\ **->tgid << 32 \|**
+/// 	*current_task*\ **->pid**.
+pub const get_current_pid_tgid = helpers.get_current_pid_tgid;
+
+/// Return A 64-bit integer containing the current GID and UID, and created as
+/// such: *current_gid* **<< 32 \|** *current_uid*.
+pub const get_current_uid_gid = helpers.get_current_uid_gid;
+
+/// Copy the **comm** attribute of the current task into *buf* of *size_of_buf*.
+/// The **comm** attribute contains the name of the executable (excluding the
+/// path) for the current task. The *size_of_buf* must be strictly positive. On
+/// success, the helper makes sure that the *buf* is NUL-terminated. On failure,
+/// it is filled with zeroes.
+pub fn get_current_comm(buf: []u8) !void {
+    if (helpers.get_current_comm(buf.ptr, buf.len) < 0) {
+        return error.Unknown;
+    }
+}
+
 pub const BpfSock = opaque {};
 pub const BpfSockAddr = opaque {};
 pub const FibLookup = opaque {};
