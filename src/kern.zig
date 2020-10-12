@@ -1,6 +1,7 @@
 const std = @import("std");
 
 usingnamespace @import("common.zig");
+usingnamespace @import("sections.zig");
 
 pub const helpers = @import("helpers.zig");
 pub const Tracepoint = @import("tracepoint.zig");
