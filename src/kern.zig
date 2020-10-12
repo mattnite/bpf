@@ -1,10 +1,10 @@
 const std = @import("std");
 
 usingnamespace @import("common.zig");
-usingnamespace @import("sections.zig");
 
 pub const helpers = @import("helpers.zig");
 pub const Tracepoint = @import("tracepoint.zig");
+pub usingnamespace @import("sections.zig");
 
 pub const MapDef = extern struct {
     type: u32,
