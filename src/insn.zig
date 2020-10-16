@@ -1,3 +1,9 @@
+usingnamespace @import("flags.zig");
+const std = @import("std");
+const Helper = @import("user.zig").Helper;
+const expectEqual = std.testing.expectEqual;
+const fd_t = std.os.fd_t;
+
 const Insn = @This();
 
 // TODO: determine that this is the expected bit layout for both little and big

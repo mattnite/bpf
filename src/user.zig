@@ -1,14 +1,12 @@
 usingnamespace @import("flags.zig");
 usingnamespace @import("common.zig");
+usingnamespace std.os.linux;
 
 const std = @import("std");
 const mem = std.mem;
 const errno = getErrno;
 const unexpectedErrno = std.os.unexpectedErrno;
-const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
-const expect = std.testing.expect;
-const fd_t = std.os.fd_t;
 
 pub const elf = @import("elf.zig");
 pub const btf = @import("btf.zig");
@@ -716,7 +714,7 @@ pub const IterCreateAttr = extern struct {
     flags: u32,
 };
 
-/// Mega struct that is passed to the bpf() syscall
+/// Mega struct that is passed to the bpf_syscall() syscall
 pub const Attr = extern union {
     map_create: MapCreateAttr,
     map_elem: MapElemAttr,
@@ -742,7 +740,7 @@ pub const Log = struct {
     buf: []u8,
 };
 
-pub fn bpf(cmd: Cmd, attr: *Attr, size: u32) usize {
+pub fn bpf_syscall(cmd: Cmd, attr: *Attr, size: u32) usize {
     return syscall3(.bpf, @enumToInt(cmd), @ptrToInt(attr), size);
 }
 
@@ -756,7 +754,7 @@ pub fn map_create(map_type: MapType, key_size: u32, value_size: u32, max_entries
     attr.map_create.value_size = value_size;
     attr.map_create.max_entries = max_entries;
 
-    const rc = bpf(.map_create, &attr, @sizeOf(MapCreateAttr));
+    const rc = bpf_syscall(.map_create, &attr, @sizeOf(MapCreateAttr));
     return switch (errno(rc)) {
         0 => @intCast(fd_t, rc),
         EINVAL => error.MapTypeOrAttrInvalid,
@@ -780,7 +778,7 @@ pub fn map_lookup_elem(fd: fd_t, key: []const u8, value: []u8) !void {
     attr.map_elem.key = @ptrToInt(key.ptr);
     attr.map_elem.result.value = @ptrToInt(value.ptr);
 
-    const rc = bpf(.map_lookup_elem, &attr, @sizeOf(MapElemAttr));
+    const rc = bpf_syscall(.map_lookup_elem, &attr, @sizeOf(MapElemAttr));
     switch (errno(rc)) {
         0 => return,
         EBADF => return error.BadFd,
@@ -802,7 +800,7 @@ pub fn map_update_elem(fd: fd_t, key: []const u8, value: []const u8, flags: u64)
     attr.map_elem.result = .{ .value = @ptrToInt(value.ptr) };
     attr.map_elem.flags = flags;
 
-    const rc = bpf(.map_update_elem, &attr, @sizeOf(MapElemAttr));
+    const rc = bpf_syscall(.map_update_elem, &attr, @sizeOf(MapElemAttr));
     switch (errno(rc)) {
         0 => return,
         E2BIG => return error.ReachedMaxEntries,
@@ -823,7 +821,7 @@ pub fn map_delete_elem(fd: fd_t, key: []const u8) !void {
     attr.map_elem.map_fd = fd;
     attr.map_elem.key = @ptrToInt(key.ptr);
 
-    const rc = bpf(.map_delete_elem, &attr, @sizeOf(MapElemAttr));
+    const rc = bpf_syscall(.map_delete_elem, &attr, @sizeOf(MapElemAttr));
     switch (errno(rc)) {
         0 => return,
         EBADF => return error.BadFd,
@@ -886,7 +884,7 @@ pub fn prog_load(
         attr.prog_load.log_level = l.level;
     }
 
-    const rc = bpf(.prog_load, &attr, @sizeOf(ProgLoadAttr));
+    const rc = bpf_syscall(.prog_load, &attr, @sizeOf(ProgLoadAttr));
     return switch (errno(rc)) {
         0 => @intCast(fd_t, rc),
         EACCES => error.UnsafeProgram,
