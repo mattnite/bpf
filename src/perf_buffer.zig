@@ -4,9 +4,9 @@ usingnamespace @import("common.zig");
 
 const std = @import("std");
 const perf = @import("perf.zig");
-const Channel = @import("channel.zig").Channel;
 
 const mem = std.mem;
+const Channel = std.event.Channel;
 
 allocator: *mem.Allocator,
 fd: fd_t,

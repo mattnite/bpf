@@ -9,5 +9,5 @@ pub usingnamespace @import("src/flags.zig");
 pub usingnamespace @import("src/common.zig");
 
 test "main" {
-    @import("std").meta.refAllDecls(@This());
+    @import("std").testing.refAllDecls(@This());
 }
