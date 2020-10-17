@@ -6,14 +6,6 @@ pub const helpers = @import("helpers.zig");
 pub const Tracepoint = @import("tracepoint.zig");
 pub usingnamespace @import("sections.zig");
 
-pub const MapDef = extern struct {
-    type: u32,
-    key_size: u32,
-    value_size: u32,
-    max_entries: u32,
-    map_flags: u32,
-};
-
 pub fn Map(
     comptime Key: type,
     comptime Value: type,

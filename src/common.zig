@@ -6,6 +6,14 @@ pub const MapUpdateType = enum(u64) {
     exist = EXIST,
 };
 
+pub const MapDef = extern struct {
+    type: u32,
+    key_size: u32,
+    value_size: u32,
+    max_entries: u32,
+    map_flags: u32,
+};
+
 pub const MapType = extern enum(u32) {
     unspec,
     hash,

@@ -17,7 +17,7 @@ pub const PerfBuffer = @import("perf_buffer.zig");
 pub const Insn = @import("insn.zig");
 
 /// These values correspond to "syscalls" within the BPF program's environment,
-/// each one is documented in std.os.linux.BPF.kern
+/// each one is documented in kern.zig
 pub const Helper = enum(i32) {
     unspec,
     map_lookup_elem,
@@ -897,6 +897,11 @@ pub fn prog_load(
 
 test "prog_load" {
     // this should fail because it does not set r0 before exiting
+    const stderr = std.io.getStdErr().writer();
+    var buf: [4096]u8 = undefined;
+    var log = Log{ .level = 7, .buf = &buf };
+    errdefer _ = stderr.print("{}\n", .{@ptrCast([*:0]const u8, &buf)}) catch {};
+
     const bad_prog = [_]Insn{
         Insn.exit(),
     };
@@ -906,13 +911,14 @@ test "prog_load" {
         Insn.exit(),
     };
 
-    const prog = try prog_load(.socket_filter, &good_prog, null, "MIT", 0);
+    const prog = try prog_load(.socket_filter, &good_prog, &log, "MIT", 0);
     defer std.os.close(prog);
 
     expectError(error.UnsafeProgram, prog_load(.socket_filter, &bad_prog, null, "MIT", 0));
 }
 
 pub const MapInfo = struct {
+    name: []const u8,
     fd: ?fd_t,
     def: kern.MapDef,
 };
@@ -925,16 +931,30 @@ pub fn Map(comptime Key: type, comptime Value: type) type {
         const Self = @This();
 
         pub fn init(info: MapInfo) !Self {
-            if (info.def.key_size != @sizeOf(Key)) return error.KeySizeMismatch;
-            if (info.def.value_size != @sizeOf(Value)) return error.ValueSizeMismatch;
+            if (info.def.key_size != @sizeOf(Key))
+                return error.KeySizeMismatch;
 
-            if (info.fd == null) {
+            if (info.def.value_size != @sizeOf(Value))
+                return error.ValueSizeMismatch;
+
+            // TODO: create the map if this is null
+            if (info.fd == null)
                 return error.MapFdNotCreated;
-            }
 
             return Self{ .fd = info.fd.?, .def = info.def };
         }
     };
 }
 
-pub const PerfEventArray = Map(u32, u32);
+pub const PerfEventArray = struct {
+    map: Map(u32, u32),
+
+    const Self = @This();
+
+    pub fn init(info: MapInfo) !Self {
+        if (info.def.type != @enumToInt(MapType.perf_event_array))
+            return error.MapTypeMismatch;
+
+        return Self{ .map = try Map(u32, u32).init(info) };
+    }
+};

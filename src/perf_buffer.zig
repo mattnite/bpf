@@ -1,10 +1,12 @@
 usingnamespace std.os.linux;
+usingnamespace @import("user.zig");
+usingnamespace @import("common.zig");
+
 const std = @import("std");
 const perf = @import("perf.zig");
-const PerfEventArray = @import("user.zig").PerfEventArray;
+const Channel = @import("channel.zig").Channel;
 
 const mem = std.mem;
-const Channel = @import("channel.zig").Channel;
 
 allocator: *mem.Allocator,
 fd: fd_t,
@@ -174,7 +176,7 @@ pub fn init(allocator: *mem.Allocator, map: PerfEventArray, page_cnt: usize) !Se
         return error.PageCountSize;
     }
 
-    const cpu_count = std.math.min(map.def.max_entries, try std.Thread.cpuCount());
+    const cpu_count = std.math.min(map.map.def.max_entries, try std.Thread.cpuCount());
 
     var ret: Self = undefined;
     ret.allocator = allocator;
@@ -191,7 +193,7 @@ pub fn init(allocator: *mem.Allocator, map: PerfEventArray, page_cnt: usize) !Se
             .cpubuf = try CpuBuf.init(i, mem.page_size * page_cnt),
             .frame = undefined,
         });
-        try BPF.map_update_elem(map.fd, mem.asBytes(&i), mem.asBytes(&ret.contexts.items[i].cpubuf.fd), 0);
+        try map_update_elem(map.map.fd, mem.asBytes(&i), mem.asBytes(&ret.contexts.items[i].cpubuf.fd), 0);
     }
 
     return ret;
@@ -226,7 +228,19 @@ pub fn run(self: *Self) callconv(.Async) void {
 }
 
 test "perf buffer" {
-    const perf_event_array = try BPF.PerfEventArray.init(64);
-    var perf_buffer = try Self.init(perf_event_array, 64);
+    const perf_event_array = try PerfEventArray.init(MapInfo{
+        .name = "",
+        .fd = null,
+        .def = @import("kern.zig").MapDef{
+            .type = @enumToInt(MapType.perf_event_array),
+            .key_size = @sizeOf(u32),
+            .value_size = @sizeOf(u32),
+            .max_entries = 64,
+            .map_flags = 0,
+        },
+    });
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var perf_buffer = try Self.init(&gpa.allocator, perf_event_array, 64);
     defer perf_buffer.deinit();
 }

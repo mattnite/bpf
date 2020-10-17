@@ -1,12 +1,13 @@
 usingnamespace @import("elf.zig");
+usingnamespace @import("user.zig");
+
 const std = @import("std");
 const Program = @import("program.zig");
+const MapDef = @import("kern.zig").MapDef;
 
 const mem = std.mem;
 const os = std.os;
 const fd_t = std.os.fd_t;
-const BPF = std.os.linux.BPF;
-const MapDef = @import("kern.zig").MapDef;
 
 allocator: *mem.Allocator,
 elf: Elf,
@@ -27,12 +28,6 @@ const RelocDesc = struct {
         relo_extern,
         call,
     };
-};
-
-const MapInfo = struct {
-    name: []const u8,
-    fd: ?fd_t,
-    def: MapDef,
 };
 
 const Elf = struct {
@@ -249,7 +244,7 @@ fn init_progs(allocator: *mem.Allocator, elf: *const Elf) !std.ArrayListUnmanage
             .name = name orelse return error.NoProgName,
             // TODO: detect program type
             .type = .socket_filter,
-            .insns = std.mem.bytesAsSlice(BPF.Insn, prog.data),
+            .insns = std.mem.bytesAsSlice(Insn, prog.data),
             .fd = null,
         });
     }
@@ -275,7 +270,7 @@ fn collect_prog_relos(self: *Self, section: *Elf.Section) !void {
 
         // get symbol
         const sym = self.elf.get_sym_idx(@truncate(u32, rel.r_info >> 32));
-        const insn_idx = rel.r_offset / @sizeOf(BPF.Insn);
+        const insn_idx = rel.r_offset / @sizeOf(Insn);
 
         const sym_name = if (@truncate(u4, rel.r_info) == STT_SECTION and sym.st_name == 0)
             name
@@ -353,7 +348,7 @@ pub fn load(self: *Self) !void {
     // load vmlinux btf
     // init kern struct ops maps
     for (self.maps.items) |*m| {
-        m.fd = try BPF.map_create(@intToEnum(BPF.MapType, m.def.type), m.def.key_size, m.def.value_size, m.def.max_entries);
+        m.fd = try map_create(@intToEnum(MapType, m.def.type), m.def.key_size, m.def.value_size, m.def.max_entries);
         //std.debug.print("made map: {}\n", .{m.fd});
         errdefer os.close(m.fd);
     }
@@ -370,7 +365,7 @@ pub fn load(self: *Self) !void {
         } else continue;
 
         for (std.mem.bytesAsSlice(Elf64_Rel, rel_section.data)) |relo| {
-            const insn_idx = relo.r_offset / @sizeOf(BPF.Insn);
+            const insn_idx = relo.r_offset / @sizeOf(Insn);
             const symbol = self.elf.get_sym_idx(@truncate(u32, relo.r_info >> 32));
             const map_name = self.elf.find_str(symbol.st_name) orelse continue;
 
@@ -380,7 +375,7 @@ pub fn load(self: *Self) !void {
                 }
             } else continue;
 
-            prog.insns[insn_idx].src = BPF.PSEUDO_MAP_FD;
+            prog.insns[insn_idx].src = PSEUDO_MAP_FD;
             prog.insns[insn_idx].imm = map_fd;
         }
 

@@ -355,7 +355,7 @@ pub fn exit() Insn {
 }
 
 test "insn bitsize" {
-    expectEqual(@bitSizeOf(Insn), 64);
+    expectEqual(64, @bitSizeOf(Insn));
 }
 
 fn expect_opcode(code: u8, insn: Insn) void {
