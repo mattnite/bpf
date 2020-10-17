@@ -246,7 +246,7 @@ fn init_progs(allocator: *mem.Allocator, elf: *const Elf) !std.ArrayListUnmanage
             .name = name orelse return error.NoProgName,
             // TODO: detect program type
             .type = .socket_filter,
-            .insns = @alignCast(@alignOf(Insn, std.mem.bytesAsSlice(Insn, prog.data))),
+            .insns = @alignCast(@alignOf(Insn), std.mem.bytesAsSlice(Insn, prog.data)),
             .fd = null,
         });
     }
