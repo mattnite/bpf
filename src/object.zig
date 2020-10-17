@@ -1,13 +1,14 @@
 usingnamespace @import("elf.zig");
-usingnamespace @import("user.zig");
 
 const std = @import("std");
+const user = @import("user.zig");
 const Program = @import("program.zig");
 const MapDef = @import("kern.zig").MapDef;
 
 const mem = std.mem;
 const os = std.os;
 const fd_t = std.os.fd_t;
+const MapInfo = user.MapInfo;
 
 allocator: *mem.Allocator,
 elf: Elf,
