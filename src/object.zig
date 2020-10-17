@@ -4,6 +4,7 @@ const std = @import("std");
 const user = @import("user.zig");
 const Program = @import("program.zig");
 const MapDef = @import("kern.zig").MapDef;
+const Insn = @import("insn.zig");
 
 const mem = std.mem;
 const os = std.os;
