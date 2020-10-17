@@ -1,4 +1,5 @@
 usingnamespace @import("elf.zig");
+usingnamespace @import("common.zig");
 
 const std = @import("std");
 const user = @import("user.zig");
