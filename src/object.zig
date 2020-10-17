@@ -350,7 +350,7 @@ pub fn load(self: *Self) !void {
     // load vmlinux btf
     // init kern struct ops maps
     for (self.maps.items) |*m| {
-        m.fd = try map_create(@intToEnum(MapType, m.def.type), m.def.key_size, m.def.value_size, m.def.max_entries);
+        m.fd = try user.map_create(@intToEnum(MapType, m.def.type), m.def.key_size, m.def.value_size, m.def.max_entries);
         //std.debug.print("made map: {}\n", .{m.fd});
         errdefer os.close(m.fd);
     }
