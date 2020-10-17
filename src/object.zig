@@ -1,10 +1,10 @@
 usingnamespace @import("elf.zig");
 usingnamespace @import("common.zig");
+usingnamespace @import("flags.zig");
 
 const std = @import("std");
 const user = @import("user.zig");
 const Program = @import("program.zig");
-const MapDef = @import("kern.zig").MapDef;
 const Insn = @import("insn.zig");
 
 const mem = std.mem;
