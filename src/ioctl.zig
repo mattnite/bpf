@@ -16,12 +16,12 @@ const bits = switch (builtin.arch) {
     else => .{ .size = 14, .dir = 2, .none = 0, .read = 1, .write = 2 },
 };
 
-const Direction = std.meta.Int(false, bits.dir);
+const Direction = std.meta.Int(.unsigned, bits.dir);
 
 pub const Request = packed struct {
     nr: u8,
     type: u8,
-    size: std.meta.Int(false, bits.size),
+    size: std.meta.Int(.unsigned, bits.size),
     dir: Direction,
 };
 
