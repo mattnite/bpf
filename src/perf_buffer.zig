@@ -228,6 +228,8 @@ pub fn run(self: *Self) callconv(.Async) void {
 }
 
 test "perf buffer" {
+    if (!std.io.is_async) return error.SkipZigTest;
+
     const perf_event_array = try PerfEventArray.init(MapInfo{
         .name = "",
         .fd = null,

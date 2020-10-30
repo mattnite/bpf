@@ -7,7 +7,3 @@ pub usingnamespace switch (builtin.arch) {
 
 pub usingnamespace @import("src/flags.zig");
 pub usingnamespace @import("src/common.zig");
-
-test "main" {
-    @import("std").testing.refAllDecls(@This());
-}
