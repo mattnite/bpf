@@ -1,0 +1,2 @@
+language: zig
+install: ./ci/zig-install.sh master
