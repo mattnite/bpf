@@ -5,7 +5,7 @@ usingnamespace @import("flags.zig");
 const std = @import("std");
 const user = @import("user.zig");
 const Program = @import("program.zig");
-const Insn = @import("insn.zig");
+const Insn = @import("insn.zig").Insn;
 
 const mem = std.mem;
 const os = std.os;

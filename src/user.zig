@@ -14,7 +14,7 @@ pub const kern = @import("kern.zig");
 
 pub const Object = @import("object.zig");
 pub const PerfBuffer = @import("perf_buffer.zig");
-pub const Insn = @import("insn.zig");
+pub const Insn = @import("insn.zig").Insn;
 
 /// These values correspond to "syscalls" within the BPF program's environment,
 /// each one is documented in kern.zig

@@ -4,355 +4,355 @@ const Helper = @import("user.zig").Helper;
 const expectEqual = std.testing.expectEqual;
 const fd_t = std.os.fd_t;
 
-const Insn = @This();
-
-// TODO: determine that this is the expected bit layout for both little and big
-// endian systems
-/// a single BPF instruction
-code: u8,
-dst: u4,
-src: u4,
-off: i16,
-imm: i32,
-
-/// r0 - r9 are general purpose 64-bit registers, r10 points to the stack
-/// frame
-pub const Reg = packed enum(u4) { r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10 };
-const Source = packed enum(u1) { reg, imm };
-
-const Mode = packed enum(u8) {
-    imm = IMM,
-    abs = ABS,
-    ind = IND,
-    mem = MEM,
-    len = LEN,
-    msh = MSH,
-};
-
-const AluOp = packed enum(u8) {
-    add = ADD,
-    sub = SUB,
-    mul = MUL,
-    div = DIV,
-    alu_or = OR,
-    alu_and = AND,
-    lsh = LSH,
-    rsh = RSH,
-    neg = NEG,
-    mod = MOD,
-    xor = XOR,
-    mov = MOV,
-    arsh = ARSH,
-};
-
-pub const Size = packed enum(u8) {
-    byte = B,
-    half_word = H,
-    word = W,
-    double_word = DW,
-};
-
-const JmpOp = packed enum(u8) {
-    ja = JA,
-    jeq = JEQ,
-    jgt = JGT,
-    jge = JGE,
-    jset = JSET,
-    jlt = JLT,
-    jle = JLE,
-    jne = JNE,
-    jsgt = JSGT,
-    jsge = JSGE,
-    jslt = JSLT,
-    jsle = JSLE,
-};
-
-const ImmOrReg = union(Source) {
+pub const Insn = packed struct {
+    // TODO: determine that this is the expected bit layout for both little and big
+    // endian systems
+    /// a single BPF instruction
+    code: u8,
+    dst: u4,
+    src: u4,
+    off: i16,
     imm: i32,
-    reg: Reg,
+
+    /// r0 - r9 are general purpose 64-bit registers, r10 points to the stack
+    /// frame
+    pub const Reg = packed enum(u4) { r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10 };
+    const Source = packed enum(u1) { reg, imm };
+
+    const Mode = packed enum(u8) {
+        imm = IMM,
+        abs = ABS,
+        ind = IND,
+        mem = MEM,
+        len = LEN,
+        msh = MSH,
+    };
+
+    const AluOp = packed enum(u8) {
+        add = ADD,
+        sub = SUB,
+        mul = MUL,
+        div = DIV,
+        alu_or = OR,
+        alu_and = AND,
+        lsh = LSH,
+        rsh = RSH,
+        neg = NEG,
+        mod = MOD,
+        xor = XOR,
+        mov = MOV,
+        arsh = ARSH,
+    };
+
+    pub const Size = packed enum(u8) {
+        byte = B,
+        half_word = H,
+        word = W,
+        double_word = DW,
+    };
+
+    const JmpOp = packed enum(u8) {
+        ja = JA,
+        jeq = JEQ,
+        jgt = JGT,
+        jge = JGE,
+        jset = JSET,
+        jlt = JLT,
+        jle = JLE,
+        jne = JNE,
+        jsgt = JSGT,
+        jsge = JSGE,
+        jslt = JSLT,
+        jsle = JSLE,
+    };
+
+    const ImmOrReg = union(Source) {
+        imm: i32,
+        reg: Reg,
+    };
+
+    fn imm_reg(code: u8, dst: Reg, src: anytype, off: i16) Insn {
+        const imm_or_reg = if (@typeInfo(@TypeOf(src)) == .EnumLiteral)
+            ImmOrReg{ .reg = @as(Reg, src) }
+        else
+            ImmOrReg{ .imm = src };
+
+        const src_type = switch (imm_or_reg) {
+            .imm => K,
+            .reg => X,
+        };
+
+        return Insn{
+            .code = code | src_type,
+            .dst = @enumToInt(dst),
+            .src = switch (imm_or_reg) {
+                .imm => 0,
+                .reg => |r| @enumToInt(r),
+            },
+            .off = off,
+            .imm = switch (imm_or_reg) {
+                .imm => |i| i,
+                .reg => 0,
+            },
+        };
+    }
+
+    fn alu(comptime width: comptime_int, op: AluOp, dst: Reg, src: anytype) Insn {
+        const width_bitfield = switch (width) {
+            32 => ALU,
+            64 => ALU64,
+            else => @compileError("width must be 32 or 64"),
+        };
+
+        return imm_reg(width_bitfield | @enumToInt(op), dst, src, 0);
+    }
+
+    pub fn mov(dst: Reg, src: anytype) Insn {
+        return alu(64, .mov, dst, src);
+    }
+
+    pub fn add(dst: Reg, src: anytype) Insn {
+        return alu(64, .add, dst, src);
+    }
+
+    pub fn sub(dst: Reg, src: anytype) Insn {
+        return alu(64, .sub, dst, src);
+    }
+
+    pub fn mul(dst: Reg, src: anytype) Insn {
+        return alu(64, .mul, dst, src);
+    }
+
+    pub fn div(dst: Reg, src: anytype) Insn {
+        return alu(64, .div, dst, src);
+    }
+
+    pub fn alu_or(dst: Reg, src: anytype) Insn {
+        return alu(64, .alu_or, dst, src);
+    }
+
+    pub fn alu_and(dst: Reg, src: anytype) Insn {
+        return alu(64, .alu_and, dst, src);
+    }
+
+    pub fn lsh(dst: Reg, src: anytype) Insn {
+        return alu(64, .lsh, dst, src);
+    }
+
+    pub fn rsh(dst: Reg, src: anytype) Insn {
+        return alu(64, .rsh, dst, src);
+    }
+
+    pub fn neg(dst: Reg) Insn {
+        return alu(64, .neg, dst, 0);
+    }
+
+    pub fn mod(dst: Reg, src: anytype) Insn {
+        return alu(64, .mod, dst, src);
+    }
+
+    pub fn xor(dst: Reg, src: anytype) Insn {
+        return alu(64, .xor, dst, src);
+    }
+
+    pub fn arsh(dst: Reg, src: anytype) Insn {
+        return alu(64, .arsh, dst, src);
+    }
+
+    fn jmp(op: JmpOp, dst: Reg, src: anytype, off: i16) Insn {
+        return imm_reg(JMP | @enumToInt(op), dst, src, off);
+    }
+
+    pub fn ja(off: i16) Insn {
+        return jmp(.ja, .r0, 0, off);
+    }
+
+    pub fn jeq(dst: Reg, src: anytype, off: i16) Insn {
+        return jmp(.jeq, dst, src, off);
+    }
+
+    pub fn jgt(dst: Reg, src: anytype, off: i16) Insn {
+        return jmp(.jgt, dst, src, off);
+    }
+
+    pub fn jge(dst: Reg, src: anytype, off: i16) Insn {
+        return jmp(.jge, dst, src, off);
+    }
+
+    pub fn jlt(dst: Reg, src: anytype, off: i16) Insn {
+        return jmp(.jlt, dst, src, off);
+    }
+
+    pub fn jle(dst: Reg, src: anytype, off: i16) Insn {
+        return jmp(.jle, dst, src, off);
+    }
+
+    pub fn jset(dst: Reg, src: anytype, off: i16) Insn {
+        return jmp(.jset, dst, src, off);
+    }
+
+    pub fn jne(dst: Reg, src: anytype, off: i16) Insn {
+        return jmp(.jne, dst, src, off);
+    }
+
+    pub fn jsgt(dst: Reg, src: anytype, off: i16) Insn {
+        return jmp(.jsgt, dst, src, off);
+    }
+
+    pub fn jsge(dst: Reg, src: anytype, off: i16) Insn {
+        return jmp(.jsge, dst, src, off);
+    }
+
+    pub fn jslt(dst: Reg, src: anytype, off: i16) Insn {
+        return jmp(.jslt, dst, src, off);
+    }
+
+    pub fn jsle(dst: Reg, src: anytype, off: i16) Insn {
+        return jmp(.jsle, dst, src, off);
+    }
+
+    pub fn xadd(dst: Reg, src: Reg) Insn {
+        return Insn{
+            .code = STX | XADD | DW,
+            .dst = @enumToInt(dst),
+            .src = @enumToInt(src),
+            .off = 0,
+            .imm = 0,
+        };
+    }
+
+    fn ld(mode: Mode, size: Size, dst: Reg, src: Reg, imm: i32) Insn {
+        return Insn{
+            .code = @enumToInt(mode) | @enumToInt(size) | LD,
+            .dst = @enumToInt(dst),
+            .src = @enumToInt(src),
+            .off = 0,
+            .imm = imm,
+        };
+    }
+
+    pub fn ld_abs(size: Size, dst: Reg, src: Reg, imm: i32) Insn {
+        return ld(.abs, size, dst, src, imm);
+    }
+
+    pub fn ld_ind(size: Size, dst: Reg, src: Reg, imm: i32) Insn {
+        return ld(.ind, size, dst, src, imm);
+    }
+
+    pub fn ldx(size: Size, dst: Reg, src: Reg, off: i16) Insn {
+        return Insn{
+            .code = MEM | @enumToInt(size) | LDX,
+            .dst = @enumToInt(dst),
+            .src = @enumToInt(src),
+            .off = off,
+            .imm = 0,
+        };
+    }
+
+    fn ld_imm_impl1(dst: Reg, src: Reg, imm: u64) Insn {
+        return Insn{
+            .code = LD | DW | IMM,
+            .dst = @enumToInt(dst),
+            .src = @enumToInt(src),
+            .off = 0,
+            .imm = @intCast(i32, @truncate(u32, imm)),
+        };
+    }
+
+    fn ld_imm_impl2(imm: u64) Insn {
+        return Insn{
+            .code = 0,
+            .dst = 0,
+            .src = 0,
+            .off = 0,
+            .imm = @intCast(i32, @truncate(u32, imm >> 32)),
+        };
+    }
+
+    pub fn ld_dw1(dst: Reg, imm: u64) Insn {
+        return ld_imm_impl1(dst, .r0, imm);
+    }
+
+    pub fn ld_dw2(imm: u64) Insn {
+        return ld_imm_impl2(imm);
+    }
+
+    pub fn ld_map_fd1(dst: Reg, map_fd: fd_t) Insn {
+        return ld_imm_impl1(dst, @intToEnum(Reg, PSEUDO_MAP_FD), @intCast(u64, map_fd));
+    }
+
+    pub fn ld_map_fd2(map_fd: fd_t) Insn {
+        return ld_imm_impl2(@intCast(u64, map_fd));
+    }
+
+    pub fn st(comptime size: Size, dst: Reg, off: i16, imm: i32) Insn {
+        if (size == .double_word) @compileError("TODO: need to determine how to correctly handle double words");
+        return Insn{
+            .code = MEM | @enumToInt(size) | ST,
+            .dst = @enumToInt(dst),
+            .src = 0,
+            .off = off,
+            .imm = imm,
+        };
+    }
+
+    pub fn stx(size: Size, dst: Reg, off: i16, src: Reg) Insn {
+        return Insn{
+            .code = MEM | @enumToInt(size) | STX,
+            .dst = @enumToInt(dst),
+            .src = @enumToInt(src),
+            .off = off,
+            .imm = 0,
+        };
+    }
+
+    fn endian_swap(endian: std.builtin.Endian, comptime size: Size, dst: Reg) Insn {
+        return Insn{
+            .code = switch (endian) {
+                .Big => 0xdc,
+                .Little => 0xd4,
+            },
+            .dst = @enumToInt(dst),
+            .src = 0,
+            .off = 0,
+            .imm = switch (size) {
+                .byte => @compileError("can't swap a single byte"),
+                .half_word => 16,
+                .word => 32,
+                .double_word => 64,
+            },
+        };
+    }
+
+    pub fn le(comptime size: Size, dst: Reg) Insn {
+        return endian_swap(.Little, size, dst);
+    }
+
+    pub fn be(comptime size: Size, dst: Reg) Insn {
+        return endian_swap(.Big, size, dst);
+    }
+
+    pub fn call(helper: Helper) Insn {
+        return Insn{
+            .code = JMP | CALL,
+            .dst = 0,
+            .src = 0,
+            .off = 0,
+            .imm = @enumToInt(helper),
+        };
+    }
+
+    /// exit BPF program
+    pub fn exit() Insn {
+        return Insn{
+            .code = JMP | EXIT,
+            .dst = 0,
+            .src = 0,
+            .off = 0,
+            .imm = 0,
+        };
+    }
 };
-
-fn imm_reg(code: u8, dst: Reg, src: anytype, off: i16) Insn {
-    const imm_or_reg = if (@typeInfo(@TypeOf(src)) == .EnumLiteral)
-        ImmOrReg{ .reg = @as(Reg, src) }
-    else
-        ImmOrReg{ .imm = src };
-
-    const src_type = switch (imm_or_reg) {
-        .imm => K,
-        .reg => X,
-    };
-
-    return Insn{
-        .code = code | src_type,
-        .dst = @enumToInt(dst),
-        .src = switch (imm_or_reg) {
-            .imm => 0,
-            .reg => |r| @enumToInt(r),
-        },
-        .off = off,
-        .imm = switch (imm_or_reg) {
-            .imm => |i| i,
-            .reg => 0,
-        },
-    };
-}
-
-fn alu(comptime width: comptime_int, op: AluOp, dst: Reg, src: anytype) Insn {
-    const width_bitfield = switch (width) {
-        32 => ALU,
-        64 => ALU64,
-        else => @compileError("width must be 32 or 64"),
-    };
-
-    return imm_reg(width_bitfield | @enumToInt(op), dst, src, 0);
-}
-
-pub fn mov(dst: Reg, src: anytype) Insn {
-    return alu(64, .mov, dst, src);
-}
-
-pub fn add(dst: Reg, src: anytype) Insn {
-    return alu(64, .add, dst, src);
-}
-
-pub fn sub(dst: Reg, src: anytype) Insn {
-    return alu(64, .sub, dst, src);
-}
-
-pub fn mul(dst: Reg, src: anytype) Insn {
-    return alu(64, .mul, dst, src);
-}
-
-pub fn div(dst: Reg, src: anytype) Insn {
-    return alu(64, .div, dst, src);
-}
-
-pub fn alu_or(dst: Reg, src: anytype) Insn {
-    return alu(64, .alu_or, dst, src);
-}
-
-pub fn alu_and(dst: Reg, src: anytype) Insn {
-    return alu(64, .alu_and, dst, src);
-}
-
-pub fn lsh(dst: Reg, src: anytype) Insn {
-    return alu(64, .lsh, dst, src);
-}
-
-pub fn rsh(dst: Reg, src: anytype) Insn {
-    return alu(64, .rsh, dst, src);
-}
-
-pub fn neg(dst: Reg) Insn {
-    return alu(64, .neg, dst, 0);
-}
-
-pub fn mod(dst: Reg, src: anytype) Insn {
-    return alu(64, .mod, dst, src);
-}
-
-pub fn xor(dst: Reg, src: anytype) Insn {
-    return alu(64, .xor, dst, src);
-}
-
-pub fn arsh(dst: Reg, src: anytype) Insn {
-    return alu(64, .arsh, dst, src);
-}
-
-fn jmp(op: JmpOp, dst: Reg, src: anytype, off: i16) Insn {
-    return imm_reg(JMP | @enumToInt(op), dst, src, off);
-}
-
-pub fn ja(off: i16) Insn {
-    return jmp(.ja, .r0, 0, off);
-}
-
-pub fn jeq(dst: Reg, src: anytype, off: i16) Insn {
-    return jmp(.jeq, dst, src, off);
-}
-
-pub fn jgt(dst: Reg, src: anytype, off: i16) Insn {
-    return jmp(.jgt, dst, src, off);
-}
-
-pub fn jge(dst: Reg, src: anytype, off: i16) Insn {
-    return jmp(.jge, dst, src, off);
-}
-
-pub fn jlt(dst: Reg, src: anytype, off: i16) Insn {
-    return jmp(.jlt, dst, src, off);
-}
-
-pub fn jle(dst: Reg, src: anytype, off: i16) Insn {
-    return jmp(.jle, dst, src, off);
-}
-
-pub fn jset(dst: Reg, src: anytype, off: i16) Insn {
-    return jmp(.jset, dst, src, off);
-}
-
-pub fn jne(dst: Reg, src: anytype, off: i16) Insn {
-    return jmp(.jne, dst, src, off);
-}
-
-pub fn jsgt(dst: Reg, src: anytype, off: i16) Insn {
-    return jmp(.jsgt, dst, src, off);
-}
-
-pub fn jsge(dst: Reg, src: anytype, off: i16) Insn {
-    return jmp(.jsge, dst, src, off);
-}
-
-pub fn jslt(dst: Reg, src: anytype, off: i16) Insn {
-    return jmp(.jslt, dst, src, off);
-}
-
-pub fn jsle(dst: Reg, src: anytype, off: i16) Insn {
-    return jmp(.jsle, dst, src, off);
-}
-
-pub fn xadd(dst: Reg, src: Reg) Insn {
-    return Insn{
-        .code = STX | XADD | DW,
-        .dst = @enumToInt(dst),
-        .src = @enumToInt(src),
-        .off = 0,
-        .imm = 0,
-    };
-}
-
-fn ld(mode: Mode, size: Size, dst: Reg, src: Reg, imm: i32) Insn {
-    return Insn{
-        .code = @enumToInt(mode) | @enumToInt(size) | LD,
-        .dst = @enumToInt(dst),
-        .src = @enumToInt(src),
-        .off = 0,
-        .imm = imm,
-    };
-}
-
-pub fn ld_abs(size: Size, dst: Reg, src: Reg, imm: i32) Insn {
-    return ld(.abs, size, dst, src, imm);
-}
-
-pub fn ld_ind(size: Size, dst: Reg, src: Reg, imm: i32) Insn {
-    return ld(.ind, size, dst, src, imm);
-}
-
-pub fn ldx(size: Size, dst: Reg, src: Reg, off: i16) Insn {
-    return Insn{
-        .code = MEM | @enumToInt(size) | LDX,
-        .dst = @enumToInt(dst),
-        .src = @enumToInt(src),
-        .off = off,
-        .imm = 0,
-    };
-}
-
-fn ld_imm_impl1(dst: Reg, src: Reg, imm: u64) Insn {
-    return Insn{
-        .code = LD | DW | IMM,
-        .dst = @enumToInt(dst),
-        .src = @enumToInt(src),
-        .off = 0,
-        .imm = @intCast(i32, @truncate(u32, imm)),
-    };
-}
-
-fn ld_imm_impl2(imm: u64) Insn {
-    return Insn{
-        .code = 0,
-        .dst = 0,
-        .src = 0,
-        .off = 0,
-        .imm = @intCast(i32, @truncate(u32, imm >> 32)),
-    };
-}
-
-pub fn ld_dw1(dst: Reg, imm: u64) Insn {
-    return ld_imm_impl1(dst, .r0, imm);
-}
-
-pub fn ld_dw2(imm: u64) Insn {
-    return ld_imm_impl2(imm);
-}
-
-pub fn ld_map_fd1(dst: Reg, map_fd: fd_t) Insn {
-    return ld_imm_impl1(dst, @intToEnum(Reg, PSEUDO_MAP_FD), @intCast(u64, map_fd));
-}
-
-pub fn ld_map_fd2(map_fd: fd_t) Insn {
-    return ld_imm_impl2(@intCast(u64, map_fd));
-}
-
-pub fn st(comptime size: Size, dst: Reg, off: i16, imm: i32) Insn {
-    if (size == .double_word) @compileError("TODO: need to determine how to correctly handle double words");
-    return Insn{
-        .code = MEM | @enumToInt(size) | ST,
-        .dst = @enumToInt(dst),
-        .src = 0,
-        .off = off,
-        .imm = imm,
-    };
-}
-
-pub fn stx(size: Size, dst: Reg, off: i16, src: Reg) Insn {
-    return Insn{
-        .code = MEM | @enumToInt(size) | STX,
-        .dst = @enumToInt(dst),
-        .src = @enumToInt(src),
-        .off = off,
-        .imm = 0,
-    };
-}
-
-fn endian_swap(endian: std.builtin.Endian, comptime size: Size, dst: Reg) Insn {
-    return Insn{
-        .code = switch (endian) {
-            .Big => 0xdc,
-            .Little => 0xd4,
-        },
-        .dst = @enumToInt(dst),
-        .src = 0,
-        .off = 0,
-        .imm = switch (size) {
-            .byte => @compileError("can't swap a single byte"),
-            .half_word => 16,
-            .word => 32,
-            .double_word => 64,
-        },
-    };
-}
-
-pub fn le(comptime size: Size, dst: Reg) Insn {
-    return endian_swap(.Little, size, dst);
-}
-
-pub fn be(comptime size: Size, dst: Reg) Insn {
-    return endian_swap(.Big, size, dst);
-}
-
-pub fn call(helper: Helper) Insn {
-    return Insn{
-        .code = JMP | CALL,
-        .dst = 0,
-        .src = 0,
-        .off = 0,
-        .imm = @enumToInt(helper),
-    };
-}
-
-/// exit BPF program
-pub fn exit() Insn {
-    return Insn{
-        .code = JMP | EXIT,
-        .dst = 0,
-        .src = 0,
-        .off = 0,
-        .imm = 0,
-    };
-}
 
 test "insn bitsize" {
     expectEqual(64, @bitSizeOf(Insn));
