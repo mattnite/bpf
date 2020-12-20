@@ -13,7 +13,7 @@ fd: fd_t,
 contexts: std.ArrayListUnmanaged(Context),
 channel: Channel(Payload),
 channel_buf: [256]Payload,
-running: std.atomic.Int(bool),
+running: std.atomic.Bool,
 
 const Self = @This();
 
@@ -149,10 +149,10 @@ const CpuBuf = struct {
     pub fn process(
         self: CpuBuf,
         allocator: *mem.Allocator,
-        running: *std.atomic.Int(bool),
+        running: *std.atomic.Bool,
         channel: *Channel(Payload),
     ) callconv(.Async) void {
-        while (running.get()) {
+        while (running.load(.SeqCst)) {
             std.event.Loop.instance.?.waitUntilFdReadable(self.fd);
 
             // TODO: might need to panic here instead of returning null
@@ -181,7 +181,7 @@ pub fn init(allocator: *mem.Allocator, map: PerfEventArray, page_cnt: usize) !Se
     var ret: Self = undefined;
     ret.allocator = allocator;
     ret.channel.init(&ret.channel_buf);
-    ret.running = std.atomic.Int(bool).init(false);
+    ret.running = std.atomic.Bool.init(false);
     errdefer ret.channel.deinit();
 
     ret.contexts = try std.ArrayListUnmanaged(Context).initCapacity(allocator, cpu_count);
@@ -221,7 +221,7 @@ pub fn get(self: *Self) Payload {
 }
 
 pub fn run(self: *Self) callconv(.Async) void {
-    self.running.set(true);
+    self.running.store(true, .SeqCst);
     for (self.contexts.items) |*ctx| {
         ctx.frame = async ctx.cpubuf.process(self.allocator, &self.running, &self.channel);
     }
