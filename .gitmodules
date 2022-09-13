@@ -1,0 +1,9 @@
+[submodule "libs/libbpf"]
+	path = libs/libbpf
+	url = https://github.com/libbpf/libbpf.git
+[submodule "libs/elftoolchain"]
+	path = libs/elftoolchain
+	url = https://github.com/elftoolchain/elftoolchain.git
+[submodule "libs/zig-zlib"]
+	path = libs/zig-zlib
+	url = https://github.com/mattnite/zig-zlib.git
