@@ -1,9 +1,9 @@
-usingnamespace @import("flags.zig");
+const flags = @import("flags.zig");
 
 pub const MapUpdateType = enum(u64) {
-    any = ANY,
-    noexist = NOEXIST,
-    exist = EXIST,
+    any = flags.ANY,
+    noexist = flags.NOEXIST,
+    exist = flags.EXIST,
 };
 
 pub const MapDef = extern struct {
@@ -14,7 +14,7 @@ pub const MapDef = extern struct {
     map_flags: u32,
 };
 
-pub const MapType = extern enum(u32) {
+pub const MapType = enum(u32) {
     unspec,
     hash,
     array,

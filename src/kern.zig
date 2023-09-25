@@ -1,6 +1,9 @@
 const std = @import("std");
 
-usingnamespace @import("common.zig");
+const common = @import("common.zig");
+const MapDef = common.MapDef;
+const MapType = common.MapType;
+const MapUpdateType = common.MapUpdateType;
 
 pub const helpers = @import("helpers.zig");
 pub const Tracepoint = @import("tracepoint.zig");
@@ -18,7 +21,7 @@ pub fn Map(
         pub fn init(map_type: MapType, max_entries: u32, flags: u32) Self {
             return Self{
                 .def = MapDef{
-                    .type = @enumToInt(map_type),
+                    .type = @intFromEnum(map_type),
                     .key_size = @sizeOf(Key),
                     .value_size = @sizeOf(Value),
                     .max_entries = max_entries,
@@ -29,7 +32,7 @@ pub fn Map(
 
         /// Perform a lookup in *map* for an entry associated to *key*.
         pub fn lookup(self: Self, key: Key) ?*Value {
-            return @ptrCast(?*Value, @alignCast(@alignOf(?*Value), helpers.map_lookup_elem(@ptrCast(*const MapDef, &self), &key)));
+            return @as(?*Value, @ptrCast(@alignCast(helpers.map_lookup_elem(@as(*const MapDef, @ptrCast(&self)), &key))));
         }
 
         /// Add or update the value of the entry associated to `key` in `map`
@@ -44,10 +47,10 @@ pub fn Map(
         /// always exist), the helper would return an error.
         pub fn update(self: Self, update_type: MapUpdateType, key: Key, value: Value) !void {
             const rc = helpers.map_update_elem(
-                @ptrCast(*const MapDef, &self),
+                @as(*const MapDef, @ptrCast(&self)),
                 &key,
                 &value,
-                @enumToInt(update_type),
+                @intFromEnum(update_type),
             );
             return switch (rc) {
                 0 => {},
@@ -57,7 +60,7 @@ pub fn Map(
 
         /// Delete entry with *key* from *map*.
         pub fn delete(self: Self, key: Key) !void {
-            const rc = helpers.map_delete_elem(@ptrCast(*const MapDef, &self), &key);
+            const rc = helpers.map_delete_elem(@as(*const MapDef, @ptrCast(&self)), &key);
             return switch (rc) {
                 0 => {},
                 else => error.Unknown,
@@ -168,7 +171,7 @@ pub const PerfEventArray = struct {
     /// - Only the packet payload, or
     /// - A combination of both.
     pub fn event_output(self: Self, ctx: anytype, flags: u64, data: []u8) !void {
-        const rc = helpers.perf_event_output(ctx, @ptrCast(*const MapDef, &self), flags, data.ptr, data.len);
+        const rc = helpers.perf_event_output(ctx, @as(*const MapDef, @ptrCast(&self)), flags, data.ptr, data.len);
         return switch (rc) {
             0 => {},
             else => error.Unknown,
@@ -209,7 +212,7 @@ pub const get_current_uid_gid = helpers.get_current_uid_gid;
 /// success, the helper makes sure that the *buf* is NUL-terminated. On failure,
 /// it is filled with zeroes.
 pub fn get_current_comm(buf: []u8) !void {
-    if (helpers.get_current_comm(buf.ptr, @truncate(u32, buf.len)) < 0) {
+    if (helpers.get_current_comm(buf.ptr, @as(u32, @truncate(buf.len))) < 0) {
         return error.Unknown;
     }
 }
@@ -248,11 +251,11 @@ pub fn get_current_comm(buf: []u8) !void {
 /// Return On success, the strictly positive length of the string, including the
 /// trailing NUL character. On error, a negative value.
 pub fn probe_read_user_str(dst: []u8, unsafe: [*:0]const u8) !usize {
-    const rc = helpers.probe_read_user_str(dst.ptr, @truncate(u32, dst.len), unsafe);
+    const rc = helpers.probe_read_user_str(dst.ptr, @as(u32, @truncate(dst.len)), unsafe);
     return if (rc < 0)
         error.Unknown
     else
-        @bitCast(usize, rc);
+        @as(usize, @bitCast(rc));
 }
 
 pub const BpfSock = opaque {};

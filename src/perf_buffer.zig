@@ -58,7 +58,7 @@ const RingBuffer = struct {
     }
 
     pub fn read_event(self: RingBuffer, allocator: *mem.Allocator) !?Event {
-        const header = @ptrCast(*volatile perf.MmapPage, self.mmap.ptr);
+        const header = @as(*volatile perf.MmapPage, @ptrCast(self.mmap.ptr));
         const head = header.data_head;
         const tail = header.data_tail;
 
@@ -66,13 +66,13 @@ const RingBuffer = struct {
 
         const size = self.mmap.len - mem.page_size;
         const start = tail % size;
-        const ehdr = @ptrCast(*perf.EventHeader, @alignCast(@alignOf(*perf.EventHeader), &self.mmap[mem.page_size + start]));
+        const ehdr = @as(*perf.EventHeader, @ptrCast(@alignCast(@alignOf(*perf.EventHeader), &self.mmap[mem.page_size + start])));
         defer header.data_tail += ehdr.size;
 
         return switch (ehdr.type) {
             perf.RECORD_SAMPLE => blk: {
                 const offset = mem.page_size + ((start + @byteOffsetOf(perf.SampleRaw, "size")) % size);
-                const sample_size = @ptrCast(*const u32, @alignCast(@alignOf(*const u32), &self.mmap[offset])).*;
+                const sample_size = @as(*const u32, @ptrCast(@alignCast(@alignOf(*const u32), &self.mmap[offset]))).*;
                 const sample_start = mem.page_size + ((start + @sizeOf(perf.SampleRaw)) % size);
 
                 var sample = try std.ArrayList(u8).initCapacity(allocator, sample_size);
@@ -89,7 +89,7 @@ const RingBuffer = struct {
             },
             perf.RECORD_LOST => blk: {
                 const offset = mem.page_size + ((start + @byteOffsetOf(perf.SampleLost, "lost")) % size);
-                break :blk .{ .lost = @ptrCast(*const u64, @alignCast(@alignOf(*const u64), &self.mmap[offset])).* };
+                break :blk .{ .lost = @as(*const u64, @ptrCast(@alignCast(@alignOf(*const u64), &self.mmap[offset]))).* };
             },
             else => error.UnknownEvent,
         };
@@ -114,14 +114,14 @@ const CpuBuf = struct {
 
         const rc = std.os.linux.syscall5(
             .perf_event_open,
-            @ptrToInt(&attr),
-            @bitCast(usize, @as(isize, -1)),
-            @intCast(usize, cpu),
-            @bitCast(usize, @as(isize, -1)),
+            @intFromPtr(&attr),
+            @as(usize, @bitCast(@as(isize, -1))),
+            @as(usize, @intCast(cpu)),
+            @as(usize, @bitCast(@as(isize, -1))),
             perf.FLAG_FD_CLOEXEC,
         );
         const fd = try switch (std.os.linux.getErrno(rc)) {
-            0 => @intCast(fd_t, rc),
+            0 => @as(fd_t, @intCast(rc)),
             else => |err| std.os.unexpectedErrno(err),
         };
         errdefer std.os.close(fd);
@@ -234,7 +234,7 @@ test "perf buffer" {
         .name = "",
         .fd = null,
         .def = @import("kern.zig").MapDef{
-            .type = @enumToInt(MapType.perf_event_array),
+            .type = @intFromEnum(MapType.perf_event_array),
             .key_size = @sizeOf(u32),
             .value_size = @sizeOf(u32),
             .max_entries = 64,
