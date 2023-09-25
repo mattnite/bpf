@@ -1,10 +1,19 @@
-usingnamespace @import("flags.zig");
-usingnamespace @import("common.zig");
-usingnamespace std.os.linux;
+const S = struct {
+    pub usingnamespace @import("flags.zig");
+    pub usingnamespace @import("common.zig");
+    pub usingnamespace std.os.linux;
+};
+const fd_t = S.fd_t;
+const pid_t = S.pid_t;
+const syscall3 = S.syscall3;
+const E = S.E;
+const MapDef = S.MapDef;
+const MapType = S.MapType;
+const MapUpdateType = S.MapUpdateType;
 
 const std = @import("std");
 const mem = std.mem;
-const errno = getErrno;
+const errno = S.getErrno;
 const unexpectedErrno = std.os.unexpectedErrno;
 const expectError = std.testing.expectError;
 
@@ -164,7 +173,7 @@ pub const Helper = enum(i32) {
     _,
 };
 
-pub const Cmd = extern enum(usize) {
+pub const Cmd = enum(usize) {
     /// Create  a map and return a file descriptor that refers to the map.  The
     /// close-on-exec file descriptor flag is automatically enabled for the new
     /// file descriptor.
@@ -287,7 +296,7 @@ pub const Cmd = extern enum(usize) {
     _,
 };
 
-pub const ProgType = extern enum(u32) {
+pub const ProgType = enum(u32) {
     unspec,
 
     /// context type: __sk_buff
@@ -382,7 +391,7 @@ pub const ProgType = extern enum(u32) {
     _,
 };
 
-pub const AttachType = extern enum(u32) {
+pub const AttachType = enum(u32) {
     cgroup_inet_ingress,
     cgroup_inet_egress,
     cgroup_inet_sock_create,
@@ -741,7 +750,7 @@ pub const Log = struct {
 };
 
 pub fn bpf_syscall(cmd: Cmd, attr: *Attr, size: u32) usize {
-    return syscall3(.bpf, @enumToInt(cmd), @ptrToInt(attr), size);
+    return syscall3(.bpf, @intFromEnum(cmd), @intFromPtr(attr), size);
 }
 
 pub fn map_create(map_type: MapType, key_size: u32, value_size: u32, max_entries: u32) !fd_t {
@@ -749,18 +758,18 @@ pub fn map_create(map_type: MapType, key_size: u32, value_size: u32, max_entries
         .map_create = mem.zeroes(MapCreateAttr),
     };
 
-    attr.map_create.map_type = @enumToInt(map_type);
+    attr.map_create.map_type = @intFromEnum(map_type);
     attr.map_create.key_size = key_size;
     attr.map_create.value_size = value_size;
     attr.map_create.max_entries = max_entries;
 
     const rc = bpf_syscall(.map_create, &attr, @sizeOf(MapCreateAttr));
     return switch (errno(rc)) {
-        0 => @intCast(fd_t, rc),
-        EINVAL => error.MapTypeOrAttrInvalid,
-        ENOMEM => error.SystemResources,
-        EPERM => error.AccessDenied,
-        else => |err| unexpectedErrno(rc),
+        @as(E, @enumFromInt(0)) => @as(fd_t, @intCast(rc)),
+        E.INVAL => error.MapTypeOrAttrInvalid,
+        E.NOMEM => error.SystemResources,
+        E.PERM => error.AccessDenied,
+        else => |err| unexpectedErrno(err),
     };
 }
 
@@ -775,18 +784,18 @@ pub fn map_lookup_elem(fd: fd_t, key: []const u8, value: []u8) !void {
     };
 
     attr.map_elem.map_fd = fd;
-    attr.map_elem.key = @ptrToInt(key.ptr);
-    attr.map_elem.result.value = @ptrToInt(value.ptr);
+    attr.map_elem.key = @intFromPtr(key.ptr);
+    attr.map_elem.result.value = @intFromPtr(value.ptr);
 
     const rc = bpf_syscall(.map_lookup_elem, &attr, @sizeOf(MapElemAttr));
     switch (errno(rc)) {
-        0 => return,
-        EBADF => return error.BadFd,
-        EFAULT => unreachable,
-        EINVAL => return error.FieldInAttrNeedsZeroing,
-        ENOENT => return error.NotFound,
-        EPERM => return error.AccessDenied,
-        else => |err| return unexpectedErrno(rc),
+        @as(E, @enumFromInt(0)) => return,
+        E.BADF => return error.BadFd,
+        E.FAULT => unreachable,
+        E.INVAL => return error.FieldInAttrNeedsZeroing,
+        E.NOENT => return error.NotFound,
+        E.PERM => return error.AccessDenied,
+        else => |err| return unexpectedErrno(err),
     }
 }
 
@@ -796,19 +805,19 @@ pub fn map_update_elem(fd: fd_t, key: []const u8, value: []const u8, flags: u64)
     };
 
     attr.map_elem.map_fd = fd;
-    attr.map_elem.key = @ptrToInt(key.ptr);
-    attr.map_elem.result = .{ .value = @ptrToInt(value.ptr) };
+    attr.map_elem.key = @intFromPtr(key.ptr);
+    attr.map_elem.result = .{ .value = @intFromPtr(value.ptr) };
     attr.map_elem.flags = flags;
 
     const rc = bpf_syscall(.map_update_elem, &attr, @sizeOf(MapElemAttr));
     switch (errno(rc)) {
-        0 => return,
-        E2BIG => return error.ReachedMaxEntries,
-        EBADF => return error.BadFd,
-        EFAULT => unreachable,
-        EINVAL => return error.FieldInAttrNeedsZeroing,
-        ENOMEM => return error.SystemResources,
-        EPERM => return error.AccessDenied,
+        @as(E, @enumFromInt(0)) => return,
+        E.@"2BIG" => return error.ReachedMaxEntries,
+        E.BADF => return error.BadFd,
+        E.FAULT => unreachable,
+        E.INVAL => return error.FieldInAttrNeedsZeroing,
+        E.NOMEM => return error.SystemResources,
+        E.PERM => return error.AccessDenied,
         else => |err| return unexpectedErrno(err),
     }
 }
@@ -819,16 +828,16 @@ pub fn map_delete_elem(fd: fd_t, key: []const u8) !void {
     };
 
     attr.map_elem.map_fd = fd;
-    attr.map_elem.key = @ptrToInt(key.ptr);
+    attr.map_elem.key = @intFromPtr(key.ptr);
 
     const rc = bpf_syscall(.map_delete_elem, &attr, @sizeOf(MapElemAttr));
     switch (errno(rc)) {
-        0 => return,
-        EBADF => return error.BadFd,
-        EFAULT => unreachable,
-        EINVAL => return error.FieldInAttrNeedsZeroing,
-        ENOENT => return error.NotFound,
-        EPERM => return error.AccessDenied,
+        @as(E, @enumFromInt(0)) => return,
+        E.BADF => return error.BadFd,
+        E.FAULT => unreachable,
+        E.INVAL => return error.FieldInAttrNeedsZeroing,
+        E.NOENT => return error.NotFound,
+        E.PERM => return error.AccessDenied,
         else => |err| return unexpectedErrno(err),
     }
 }
@@ -843,7 +852,7 @@ test "map lookup, update, and delete" {
     var value = mem.zeroes([value_size]u8);
 
     // fails looking up value that doesn't exist
-    expectError(error.NotFound, map_lookup_elem(map, &key, &value));
+    try expectError(error.NotFound, map_lookup_elem(map, &key, &value));
 
     // succeed at updating and looking up element
     try map_update_elem(map, &key, &value, 0);
@@ -851,14 +860,14 @@ test "map lookup, update, and delete" {
 
     // fails inserting more than max entries
     const second_key = [key_size]u8{ 0, 0, 0, 1 };
-    expectError(error.ReachedMaxEntries, map_update_elem(map, &second_key, &value, 0));
+    try expectError(error.ReachedMaxEntries, map_update_elem(map, &second_key, &value, 0));
 
     // succeed at deleting an existing elem
     try map_delete_elem(map, &key);
-    expectError(error.NotFound, map_lookup_elem(map, &key, &value));
+    try expectError(error.NotFound, map_lookup_elem(map, &key, &value));
 
     // fail at deleting a non-existing elem
-    expectError(error.NotFound, map_delete_elem(map, &key));
+    try expectError(error.NotFound, map_delete_elem(map, &key));
 }
 
 pub fn prog_load(
@@ -872,25 +881,25 @@ pub fn prog_load(
         .prog_load = mem.zeroes(ProgLoadAttr),
     };
 
-    attr.prog_load.prog_type = @enumToInt(prog_type);
-    attr.prog_load.insns = @ptrToInt(insns.ptr);
-    attr.prog_load.insn_cnt = @intCast(u32, insns.len);
-    attr.prog_load.license = @ptrToInt(license.ptr);
+    attr.prog_load.prog_type = @intFromEnum(prog_type);
+    attr.prog_load.insns = @intFromPtr(insns.ptr);
+    attr.prog_load.insn_cnt = @as(u32, @intCast(insns.len));
+    attr.prog_load.license = @intFromPtr(license.ptr);
     attr.prog_load.kern_version = kern_version;
 
     if (log) |l| {
-        attr.prog_load.log_buf = @ptrToInt(l.buf.ptr);
-        attr.prog_load.log_size = @intCast(u32, l.buf.len);
+        attr.prog_load.log_buf = @intFromPtr(l.buf.ptr);
+        attr.prog_load.log_size = @as(u32, @intCast(l.buf.len));
         attr.prog_load.log_level = l.level;
     }
 
     const rc = bpf_syscall(.prog_load, &attr, @sizeOf(ProgLoadAttr));
     return switch (errno(rc)) {
-        0 => @intCast(fd_t, rc),
-        EACCES => error.UnsafeProgram,
-        EFAULT => unreachable,
-        EINVAL => error.InvalidProgram,
-        EPERM => error.AccessDenied,
+        0 => @as(fd_t, @intCast(rc)),
+        E.ACCES => error.UnsafeProgram,
+        E.FAULT => unreachable,
+        E.INVAL => error.InvalidProgram,
+        E.PERM => error.AccessDenied,
         else => |err| unexpectedErrno(err),
     };
 }
@@ -900,7 +909,7 @@ test "prog_load" {
     const stderr = std.io.getStdErr().writer();
     var buf: [4096]u8 = undefined;
     var log = Log{ .level = 7, .buf = &buf };
-    errdefer _ = stderr.print("{}\n", .{@ptrCast([*:0]const u8, &buf)}) catch {};
+    errdefer _ = stderr.print("{}\n", .{@as([*:0]const u8, @ptrCast(&buf))}) catch {};
 
     const bad_prog = [_]Insn{
         Insn.exit(),
@@ -952,7 +961,7 @@ pub const PerfEventArray = struct {
     const Self = @This();
 
     pub fn init(info: MapInfo) !Self {
-        if (info.def.type != @enumToInt(MapType.perf_event_array))
+        if (info.def.type != @intFromEnum(MapType.perf_event_array))
             return error.MapTypeMismatch;
 
         return Self{ .map = try Map(u32, u32).init(info) };

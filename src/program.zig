@@ -27,7 +27,7 @@ pub fn load(self: *Self, license: []const u8, kern_version: u32) !void {
         .buf = &buf,
     };
 
-    errdefer _ = std.io.getStdErr().outStream().print("{}\n", .{@ptrCast([*:0]u8, &buf)}) catch {};
+    errdefer _ = std.io.getStdErr().outStream().print("{}\n", .{@as([*:0]u8, @ptrCast(&buf))}) catch {};
     self.fd = try prog_load(self.type.?, self.insns, &log, license, kern_version);
 }
 

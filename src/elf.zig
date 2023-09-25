@@ -8,11 +8,11 @@ pub fn offset_to_value(comptime T: type, buf: []const u8, offset: usize) T {
 }
 
 fn get_header(comptime elf: []const u8) *const Elf64_Ehdr {
-    return @ptrCast(*const Elf64_Ehdr, elf.ptr);
+    return @as(*const Elf64_Ehdr, @ptrCast(elf.ptr));
 }
 
 fn strtab_get_str(strtab: []const u8, offset: usize) []const u8 {
-    return for (strtab[offset..]) |c, i| {
+    return for (strtab[offset..], 0..) |c, i| {
         if (c == 0) {
             break strtab[offset .. offset + i];
         }

@@ -1,6 +1,16 @@
-usingnamespace @import("elf.zig");
-usingnamespace @import("common.zig");
-usingnamespace @import("flags.zig");
+const S = struct {
+    pub usingnamespace @import("elf.zig");
+    pub usingnamespace @import("common.zig");
+    pub usingnamespace @import("flags.zig");
+};
+const Elf64_Ehdr = S.Elf64_Ehdr;
+const Elf64_Sym = S.Elf64_Sym;
+const Elf64_Rel = S.Elf64_Rel;
+const SHT_REL = S.SHT_REL;
+
+const MapDef = S.MapDef;
+const MapType = S.MapType;
+const MapUpdateType = S.MapUpdateType;
 
 const std = @import("std");
 const user = @import("user.zig");
@@ -78,7 +88,7 @@ const Elf = struct {
     }
 
     fn find_str_impl(section: *const Section, offset: usize) ?[]const u8 {
-        return for (section.data[offset..]) |c, i| {
+        return for (section.data[offset..], 0..) |c, i| {
             if (c == 0) {
                 break section.data[offset .. offset + i];
             }
@@ -138,7 +148,7 @@ const Elf = struct {
         var symtab: ?*Section = null;
         var shstrtab: ?*Section = null;
 
-        for (sections) |*section, i| {
+        for (sections, 0..) |*section, i| {
             var section_header = offset_to_value(
                 Elf64_Shdr,
                 elf_buf,
@@ -216,7 +226,7 @@ fn init_maps(allocator: *mem.Allocator, elf: *const Elf) !std.ArrayListUnmanaged
     errdefer ret.deinit(allocator);
 
     if (elf.maps) |maps| {
-        const maps_idx = for (elf.sections) |*section, i| {
+        const maps_idx = for (elf.sections, 0..) |*section, i| {
             if (maps.data.ptr == section.data.ptr) {
                 break i;
             }
@@ -257,10 +267,12 @@ fn init_progs(allocator: *mem.Allocator, elf: *const Elf) !std.ArrayListUnmanage
 
 fn collect_st_ops_relos(self: *Self, section: *Elf.Section) !void {
     const name = self.elf.find_section_name(section);
+    _ = name;
     //std.debug.print("got st ops relo: {}\n", .{name});
 }
 fn collect_map_relos(self: *Self, section: *Elf.Section) !void {
     const name = self.elf.find_section_name(section);
+    _ = name;
     //std.debug.print("got btf map relo: {}\n", .{name});
 }
 
@@ -269,13 +281,13 @@ fn collect_prog_relos(self: *Self, section: *Elf.Section) !void {
     var target = &self.elf.sections[section.header.sh_info];
 
     const num = section.header.sh_size / section.header.sh_entsize;
-    for (mem.bytesAsSlice(Elf64_Rel, section.data)) |rel, i| {
+    for (mem.bytesAsSlice(Elf64_Rel, section.data), 0..) |rel, i| {
 
         // get symbol
-        const sym = self.elf.get_sym_idx(@truncate(u32, rel.r_info >> 32));
+        const sym = self.elf.get_sym_idx(@as(u32, @truncate(rel.r_info >> 32)));
         const insn_idx = rel.r_offset / @sizeOf(Insn);
 
-        const sym_name = if (@truncate(u4, rel.r_info) == STT_SECTION and sym.st_name == 0)
+        const sym_name = if (@as(u4, @truncate(rel.r_info)) == STT_SECTION and sym.st_name == 0)
             name
         else
             self.elf.find_str(sym.st_name);
@@ -351,7 +363,7 @@ pub fn load(self: *Self) !void {
     // load vmlinux btf
     // init kern struct ops maps
     for (self.maps.items) |*m| {
-        m.fd = try user.map_create(@intToEnum(MapType, m.def.type), m.def.key_size, m.def.value_size, m.def.max_entries);
+        m.fd = try user.map_create(@as(MapType, @enumFromInt(m.def.type)), m.def.key_size, m.def.value_size, m.def.max_entries);
         //std.debug.print("made map: {}\n", .{m.fd});
         errdefer os.close(m.fd);
     }
@@ -369,7 +381,7 @@ pub fn load(self: *Self) !void {
 
         for (std.mem.bytesAsSlice(Elf64_Rel, rel_section.data)) |relo| {
             const insn_idx = relo.r_offset / @sizeOf(Insn);
-            const symbol = self.elf.get_sym_idx(@truncate(u32, relo.r_info >> 32));
+            const symbol = self.elf.get_sym_idx(@as(u32, @truncate(relo.r_info >> 32)));
             const map_name = self.elf.find_str(symbol.st_name) orelse continue;
 
             const map_fd = for (self.maps.items) |m| {
