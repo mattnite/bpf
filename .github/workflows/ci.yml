@@ -1,0 +1,50 @@
+
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+
+      - name: Build
+        run: zig build -Doptimize=ReleaseSmall
+
+      - name: Test
+        run: zig build test -Doptimize=ReleaseSmall
+
+  cross-compile:
+    name: Cross-Compile
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [
+          windows-latest,
+          macos-latest,
+        ]
+        target: [
+          x86_64-linux-musl
+          x86_64-linux-gnu
+          aarch64-linux-musl
+          aarch64-linux-gnu
+        ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+      - name: Build
+        run: zig build -Doptimize=ReleaseSmall -Dtarget=${{ matrix.target }}

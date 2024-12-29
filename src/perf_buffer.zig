@@ -1,12 +1,14 @@
-usingnamespace std.os.linux;
-usingnamespace @import("user.zig");
-usingnamespace @import("common.zig");
-
 const std = @import("std");
-const perf = @import("perf.zig");
-
+const fd_t = std.posix.fd_t;
 const mem = std.mem;
 const Channel = std.event.Channel;
+const linux = std.os.linux;
+
+const perf = @import("perf.zig");
+const user = @import("user.zig");
+const MapInfo = user.MapInfo;
+
+const common = @import("common.zig");
 
 allocator: *mem.Allocator,
 fd: fd_t,
@@ -45,8 +47,8 @@ const RingBuffer = struct {
             .mmap = try std.os.mmap(
                 null,
                 mmap_size + mem.page_size,
-                PROT_READ | PROT_WRITE,
-                MAP_SHARED,
+                std.linux.PROT_READ | std.linux.PROT_WRITE,
+                std.linux.MAP_SHARED,
                 fd,
                 0,
             ),
@@ -58,7 +60,7 @@ const RingBuffer = struct {
     }
 
     pub fn read_event(self: RingBuffer, allocator: *mem.Allocator) !?Event {
-        const header = @ptrCast(*volatile perf.MmapPage, self.mmap.ptr);
+        const header: *volatile perf.MmapPage = @ptrCast(self.mmap.ptr);
         const head = header.data_head;
         const tail = header.data_tail;
 
@@ -66,13 +68,13 @@ const RingBuffer = struct {
 
         const size = self.mmap.len - mem.page_size;
         const start = tail % size;
-        const ehdr = @ptrCast(*perf.EventHeader, @alignCast(@alignOf(*perf.EventHeader), &self.mmap[mem.page_size + start]));
+        const ehdr: *perf.EventHeader = @ptrCast(@alignCast(&self.mmap[mem.page_size + start]));
         defer header.data_tail += ehdr.size;
 
         return switch (ehdr.type) {
             perf.RECORD_SAMPLE => blk: {
-                const offset = mem.page_size + ((start + @byteOffsetOf(perf.SampleRaw, "size")) % size);
-                const sample_size = @ptrCast(*const u32, @alignCast(@alignOf(*const u32), &self.mmap[offset])).*;
+                const offset = mem.page_size + ((start + @offsetOf(perf.SampleRaw, "size")) % size);
+                const sample_size: *const u32 = @ptrCast(@alignCast(&self.mmap[offset])).*;
                 const sample_start = mem.page_size + ((start + @sizeOf(perf.SampleRaw)) % size);
 
                 var sample = try std.ArrayList(u8).initCapacity(allocator, sample_size);
@@ -112,16 +114,16 @@ const CpuBuf = struct {
         attr.wakeup.events = 1;
         attr.size = @sizeOf(perf.EventAttr);
 
-        const rc = std.os.linux.syscall5(
+        const rc = linux.syscall5(
             .perf_event_open,
-            @ptrToInt(&attr),
-            @bitCast(usize, @as(isize, -1)),
-            @intCast(usize, cpu),
-            @bitCast(usize, @as(isize, -1)),
+            @intFromPtr(&attr),
+            @bitCast(@as(isize, -1)),
+            @intCast(cpu),
+            @bitCast(@as(isize, -1)),
             perf.FLAG_FD_CLOEXEC,
         );
-        const fd = try switch (std.os.linux.getErrno(rc)) {
-            0 => @intCast(fd_t, rc),
+        const fd: fd_t = try switch (linux.getErrno(rc)) {
+            0 => @intCast(rc),
             else => |err| std.os.unexpectedErrno(err),
         };
         errdefer std.os.close(fd);
@@ -164,13 +166,13 @@ const CpuBuf = struct {
 
     pub fn deinit(self: CpuBuf) void {
         self.ring_buffer.deinit();
-        const status = ioctl(self.fd, perf.EVENT_IOC_DISABLE, 0);
+        const status = linux.ioctl(self.fd, perf.EVENT_IOC_DISABLE, 0);
         if (status != 0) unreachable;
         std.os.close(self.fd);
     }
 };
 
-pub fn init(allocator: *mem.Allocator, map: PerfEventArray, page_cnt: usize) !Self {
+pub fn init(allocator: *mem.Allocator, map: user.PerfEventArray, page_cnt: usize) !Self {
     // page count must be power of two
     if (@popCount(usize, page_cnt) != 1) {
         return error.PageCountSize;
@@ -230,7 +232,7 @@ pub fn run(self: *Self) callconv(.Async) void {
 test "perf buffer" {
     if (!std.io.is_async) return error.SkipZigTest;
 
-    const perf_event_array = try PerfEventArray.init(MapInfo{
+    const perf_event_array = try user.PerfEventArray.init(MapInfo{
         .name = "",
         .fd = null,
         .def = @import("kern.zig").MapDef{

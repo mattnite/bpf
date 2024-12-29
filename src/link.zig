@@ -1,9 +1,11 @@
-usingnamespace @import("user.zig");
 const std = @import("std");
 const fd_t = std.os.fd_t;
 
+const user = @import("user.zig");
+
 const Self = @This();
-const DetachFn = fn (link: *Self) !void;
+const DetachFn = fn (link: *Self) DetachError!void;
+const DetachError = error{};
 const DestroyFn = DetachFn;
 
 fd: fd_t,
@@ -15,10 +17,10 @@ fn pin(self: *Self, path: []const u8) !void {
     if (self.pin_path) {
         return error.AlreadyPinned;
     } else {
-        pin_path = path;
+        self.pin_path = path;
     }
 
-    try obj_pin(self.fd, path);
+    try user.obj_pin(self.fd, path);
 }
 
 fn unpin(self: *Self) !void {
@@ -27,8 +29,8 @@ fn unpin(self: *Self) !void {
     }
 }
 
-fn update_program(self: *Self, prog: *Program) !void {
-    try link_update(self.fd, prog.fd, null);
+fn update_program(self: *Self, prog: *user.Program) !void {
+    try user.link_update(self.fd, prog.fd, null);
 }
 
 fn destroy(self: *Self) !void {

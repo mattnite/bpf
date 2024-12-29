@@ -1,8 +1,129 @@
-usingnamespace @import("flags.zig");
 const std = @import("std");
 const Helper = @import("user.zig").Helper;
 const expectEqual = std.testing.expectEqual;
-const fd_t = std.os.fd_t;
+const fd_t = std.posix.fd_t;
+//const defs = @import("flags.zig");
+
+// instruction classes
+pub const LD = 0x00;
+pub const LDX = 0x01;
+pub const ST = 0x02;
+pub const STX = 0x03;
+pub const ALU = 0x04;
+pub const JMP = 0x05;
+pub const RET = 0x06;
+pub const MISC = 0x07;
+
+/// 32-bit
+pub const W = 0x00;
+/// 16-bit
+pub const H = 0x08;
+/// 8-bit
+pub const B = 0x10;
+/// 64-bit
+pub const DW = 0x18;
+
+pub const IMM = 0x00;
+pub const ABS = 0x20;
+pub const IND = 0x40;
+pub const MEM = 0x60;
+pub const LEN = 0x80;
+pub const MSH = 0xa0;
+
+// alu fields
+pub const ADD = 0x00;
+pub const SUB = 0x10;
+pub const MUL = 0x20;
+pub const DIV = 0x30;
+pub const OR = 0x40;
+pub const AND = 0x50;
+pub const LSH = 0x60;
+pub const RSH = 0x70;
+pub const NEG = 0x80;
+pub const MOD = 0x90;
+pub const XOR = 0xa0;
+
+// jmp fields
+pub const JA = 0x00;
+pub const JEQ = 0x10;
+pub const JGT = 0x20;
+pub const JGE = 0x30;
+pub const JSET = 0x40;
+
+//#define BPF_SRC(code)   ((code) & 0x08)
+pub const K = 0x00;
+pub const X = 0x08;
+
+pub const MAXINSNS = 4096;
+
+// instruction classes
+/// jmp mode in word width
+pub const JMP32 = 0x06;
+
+/// alu mode in double word width
+pub const ALU64 = 0x07;
+
+// ld/ldx fields
+/// exclusive add
+pub const XADD = 0xc0;
+
+// alu/jmp fields
+/// mov reg to reg
+pub const MOV = 0xb0;
+
+/// sign extending arithmetic shift right */
+pub const ARSH = 0xc0;
+
+// change endianness of a register
+/// flags for endianness conversion:
+pub const END = 0xd0;
+
+/// convert to little-endian */
+pub const TO_LE = 0x00;
+
+/// convert to big-endian
+pub const TO_BE = 0x08;
+pub const FROM_LE = TO_LE;
+pub const FROM_BE = TO_BE;
+
+// jmp encodings
+/// jump != *
+pub const JNE = 0x50;
+
+/// LT is unsigned, '<'
+pub const JLT = 0xa0;
+
+/// LE is unsigned, '<=' *
+pub const JLE = 0xb0;
+
+/// SGT is signed '>', GT in x86
+pub const JSGT = 0x60;
+
+/// SGE is signed '>=', GE in x86
+pub const JSGE = 0x70;
+
+/// SLT is signed, '<'
+pub const JSLT = 0xc0;
+
+/// SLE is signed, '<='
+pub const JSLE = 0xd0;
+
+/// function call
+pub const CALL = 0x80;
+
+/// function return
+pub const EXIT = 0x90;
+
+/// When BPF ldimm64's insn[0].src_reg != 0 then this can have two extensions:
+/// insn[0].src_reg:  BPF_PSEUDO_MAP_FD   BPF_PSEUDO_MAP_VALUE
+/// insn[0].imm:      map fd              map fd
+/// insn[1].imm:      0                   offset into value
+/// insn[0].off:      0                   0
+/// insn[1].off:      0                   0
+/// ldimm64 rewrite:  address of map      address of map[0]+offset
+/// verifier type:    CONST_PTR_TO_MAP    PTR_TO_MAP_VALUE
+pub const PSEUDO_MAP_FD = 1;
+pub const PSEUDO_MAP_VALUE = 2;
 
 pub const Insn = packed struct {
     // TODO: determine that this is the expected bit layout for both little and big
@@ -16,10 +137,10 @@ pub const Insn = packed struct {
 
     /// r0 - r9 are general purpose 64-bit registers, r10 points to the stack
     /// frame
-    pub const Reg = packed enum(u4) { r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10 };
-    const Source = packed enum(u1) { reg, imm };
+    pub const Reg = enum(u4) { r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10 };
+    const Source = enum(u1) { reg, imm };
 
-    const Mode = packed enum(u8) {
+    const Mode = enum(u8) {
         imm = IMM,
         abs = ABS,
         ind = IND,
@@ -28,7 +149,7 @@ pub const Insn = packed struct {
         msh = MSH,
     };
 
-    const AluOp = packed enum(u8) {
+    const AluOp = enum(u8) {
         add = ADD,
         sub = SUB,
         mul = MUL,
@@ -44,14 +165,14 @@ pub const Insn = packed struct {
         arsh = ARSH,
     };
 
-    pub const Size = packed enum(u8) {
+    pub const Size = enum(u8) {
         byte = B,
         half_word = H,
         word = W,
         double_word = DW,
     };
 
-    const JmpOp = packed enum(u8) {
+    const JmpOp = enum(u8) {
         ja = JA,
         jeq = JEQ,
         jgt = JGT,
@@ -67,8 +188,8 @@ pub const Insn = packed struct {
     };
 
     const ImmOrReg = union(Source) {
-        imm: i32,
         reg: Reg,
+        imm: i32,
     };
 
     fn imm_reg(code: u8, dst: Reg, src: anytype, off: i16) Insn {
@@ -84,10 +205,10 @@ pub const Insn = packed struct {
 
         return Insn{
             .code = code | src_type,
-            .dst = @enumToInt(dst),
+            .dst = @intFromEnum(dst),
             .src = switch (imm_or_reg) {
                 .imm => 0,
-                .reg => |r| @enumToInt(r),
+                .reg => |r| @intFromEnum(r),
             },
             .off = off,
             .imm = switch (imm_or_reg) {
@@ -104,7 +225,7 @@ pub const Insn = packed struct {
             else => @compileError("width must be 32 or 64"),
         };
 
-        return imm_reg(width_bitfield | @enumToInt(op), dst, src, 0);
+        return imm_reg(width_bitfield | @intFromEnum(op), dst, src, 0);
     }
 
     pub fn mov(dst: Reg, src: anytype) Insn {
@@ -160,7 +281,7 @@ pub const Insn = packed struct {
     }
 
     fn jmp(op: JmpOp, dst: Reg, src: anytype, off: i16) Insn {
-        return imm_reg(JMP | @enumToInt(op), dst, src, off);
+        return imm_reg(JMP | @intFromEnum(op), dst, src, off);
     }
 
     pub fn ja(off: i16) Insn {
@@ -214,8 +335,8 @@ pub const Insn = packed struct {
     pub fn xadd(dst: Reg, src: Reg) Insn {
         return Insn{
             .code = STX | XADD | DW,
-            .dst = @enumToInt(dst),
-            .src = @enumToInt(src),
+            .dst = @intFromEnum(dst),
+            .src = @intFromEnum(src),
             .off = 0,
             .imm = 0,
         };
@@ -223,9 +344,9 @@ pub const Insn = packed struct {
 
     fn ld(mode: Mode, size: Size, dst: Reg, src: Reg, imm: i32) Insn {
         return Insn{
-            .code = @enumToInt(mode) | @enumToInt(size) | LD,
-            .dst = @enumToInt(dst),
-            .src = @enumToInt(src),
+            .code = @intFromEnum(mode) | @intFromEnum(size) | LD,
+            .dst = @intFromEnum(dst),
+            .src = @intFromEnum(src),
             .off = 0,
             .imm = imm,
         };
@@ -241,9 +362,9 @@ pub const Insn = packed struct {
 
     pub fn ldx(size: Size, dst: Reg, src: Reg, off: i16) Insn {
         return Insn{
-            .code = MEM | @enumToInt(size) | LDX,
-            .dst = @enumToInt(dst),
-            .src = @enumToInt(src),
+            .code = MEM | @intFromEnum(size) | LDX,
+            .dst = @intFromEnum(dst),
+            .src = @intFromEnum(src),
             .off = off,
             .imm = 0,
         };
@@ -252,10 +373,10 @@ pub const Insn = packed struct {
     fn ld_imm_impl1(dst: Reg, src: Reg, imm: u64) Insn {
         return Insn{
             .code = LD | DW | IMM,
-            .dst = @enumToInt(dst),
-            .src = @enumToInt(src),
+            .dst = @intFromEnum(dst),
+            .src = @intFromEnum(src),
             .off = 0,
-            .imm = @intCast(i32, @truncate(u32, imm)),
+            .imm = @intCast(@as(u32, @truncate(imm))),
         };
     }
 
@@ -265,7 +386,7 @@ pub const Insn = packed struct {
             .dst = 0,
             .src = 0,
             .off = 0,
-            .imm = @intCast(i32, @truncate(u32, imm >> 32)),
+            .imm = @intCast(@as(u32, @truncate(imm >> 32))),
         };
     }
 
@@ -278,18 +399,18 @@ pub const Insn = packed struct {
     }
 
     pub fn ld_map_fd1(dst: Reg, map_fd: fd_t) Insn {
-        return ld_imm_impl1(dst, @intToEnum(Reg, PSEUDO_MAP_FD), @intCast(u64, map_fd));
+        return ld_imm_impl1(dst, @enumFromInt(PSEUDO_MAP_FD), @intCast(map_fd));
     }
 
     pub fn ld_map_fd2(map_fd: fd_t) Insn {
-        return ld_imm_impl2(@intCast(u64, map_fd));
+        return ld_imm_impl2(@intCast(map_fd));
     }
 
     pub fn st(comptime size: Size, dst: Reg, off: i16, imm: i32) Insn {
         if (size == .double_word) @compileError("TODO: need to determine how to correctly handle double words");
         return Insn{
-            .code = MEM | @enumToInt(size) | ST,
-            .dst = @enumToInt(dst),
+            .code = MEM | @intFromEnum(size) | ST,
+            .dst = @intFromEnum(dst),
             .src = 0,
             .off = off,
             .imm = imm,
@@ -298,9 +419,9 @@ pub const Insn = packed struct {
 
     pub fn stx(size: Size, dst: Reg, off: i16, src: Reg) Insn {
         return Insn{
-            .code = MEM | @enumToInt(size) | STX,
-            .dst = @enumToInt(dst),
-            .src = @enumToInt(src),
+            .code = MEM | @intFromEnum(size) | STX,
+            .dst = @intFromEnum(dst),
+            .src = @intFromEnum(src),
             .off = off,
             .imm = 0,
         };
@@ -309,10 +430,10 @@ pub const Insn = packed struct {
     fn endian_swap(endian: std.builtin.Endian, comptime size: Size, dst: Reg) Insn {
         return Insn{
             .code = switch (endian) {
-                .Big => 0xdc,
-                .Little => 0xd4,
+                .big => 0xdc,
+                .little => 0xd4,
             },
-            .dst = @enumToInt(dst),
+            .dst = @intFromEnum(dst),
             .src = 0,
             .off = 0,
             .imm = switch (size) {
@@ -325,11 +446,11 @@ pub const Insn = packed struct {
     }
 
     pub fn le(comptime size: Size, dst: Reg) Insn {
-        return endian_swap(.Little, size, dst);
+        return endian_swap(.little, size, dst);
     }
 
     pub fn be(comptime size: Size, dst: Reg) Insn {
-        return endian_swap(.Big, size, dst);
+        return endian_swap(.big, size, dst);
     }
 
     pub fn call(helper: Helper) Insn {
@@ -338,7 +459,7 @@ pub const Insn = packed struct {
             .dst = 0,
             .src = 0,
             .off = 0,
-            .imm = @enumToInt(helper),
+            .imm = @intFromEnum(helper),
         };
     }
 
@@ -355,11 +476,7 @@ pub const Insn = packed struct {
 };
 
 test "insn bitsize" {
-    expectEqual(64, @bitSizeOf(Insn));
-}
-
-fn expect_opcode(code: u8, insn: Insn) void {
-    expectEqual(code, insn.code);
+    try expectEqual(64, @bitSizeOf(Insn));
 }
 
 // The opcodes were grabbed from https://github.com/iovisor/bpf-docs/blob/master/eBPF.md
@@ -368,106 +485,106 @@ test "opcodes" {
     // loading 64-bit immediates (imm is only 32 bits wide)
 
     // alu instructions
-    expect_opcode(0x07, Insn.add(.r1, 0));
-    expect_opcode(0x0f, Insn.add(.r1, .r2));
-    expect_opcode(0x17, Insn.sub(.r1, 0));
-    expect_opcode(0x1f, Insn.sub(.r1, .r2));
-    expect_opcode(0x27, Insn.mul(.r1, 0));
-    expect_opcode(0x2f, Insn.mul(.r1, .r2));
-    expect_opcode(0x37, Insn.div(.r1, 0));
-    expect_opcode(0x3f, Insn.div(.r1, .r2));
-    expect_opcode(0x47, Insn.alu_or(.r1, 0));
-    expect_opcode(0x4f, Insn.alu_or(.r1, .r2));
-    expect_opcode(0x57, Insn.alu_and(.r1, 0));
-    expect_opcode(0x5f, Insn.alu_and(.r1, .r2));
-    expect_opcode(0x67, Insn.lsh(.r1, 0));
-    expect_opcode(0x6f, Insn.lsh(.r1, .r2));
-    expect_opcode(0x77, Insn.rsh(.r1, 0));
-    expect_opcode(0x7f, Insn.rsh(.r1, .r2));
-    expect_opcode(0x87, Insn.neg(.r1));
-    expect_opcode(0x97, Insn.mod(.r1, 0));
-    expect_opcode(0x9f, Insn.mod(.r1, .r2));
-    expect_opcode(0xa7, Insn.xor(.r1, 0));
-    expect_opcode(0xaf, Insn.xor(.r1, .r2));
-    expect_opcode(0xb7, Insn.mov(.r1, 0));
-    expect_opcode(0xbf, Insn.mov(.r1, .r2));
-    expect_opcode(0xc7, Insn.arsh(.r1, 0));
-    expect_opcode(0xcf, Insn.arsh(.r1, .r2));
+    try expectEqual(0x07, Insn.add(.r1, 0).code);
+    try expectEqual(0x0f, Insn.add(.r1, .r2).code);
+    try expectEqual(0x17, Insn.sub(.r1, 0).code);
+    try expectEqual(0x1f, Insn.sub(.r1, .r2).code);
+    try expectEqual(0x27, Insn.mul(.r1, 0).code);
+    try expectEqual(0x2f, Insn.mul(.r1, .r2).code);
+    try expectEqual(0x37, Insn.div(.r1, 0).code);
+    try expectEqual(0x3f, Insn.div(.r1, .r2).code);
+    try expectEqual(0x47, Insn.alu_or(.r1, 0).code);
+    try expectEqual(0x4f, Insn.alu_or(.r1, .r2).code);
+    try expectEqual(0x57, Insn.alu_and(.r1, 0).code);
+    try expectEqual(0x5f, Insn.alu_and(.r1, .r2).code);
+    try expectEqual(0x67, Insn.lsh(.r1, 0).code);
+    try expectEqual(0x6f, Insn.lsh(.r1, .r2).code);
+    try expectEqual(0x77, Insn.rsh(.r1, 0).code);
+    try expectEqual(0x7f, Insn.rsh(.r1, .r2).code);
+    try expectEqual(0x87, Insn.neg(.r1).code);
+    try expectEqual(0x97, Insn.mod(.r1, 0).code);
+    try expectEqual(0x9f, Insn.mod(.r1, .r2).code);
+    try expectEqual(0xa7, Insn.xor(.r1, 0).code);
+    try expectEqual(0xaf, Insn.xor(.r1, .r2).code);
+    try expectEqual(0xb7, Insn.mov(.r1, 0).code);
+    try expectEqual(0xbf, Insn.mov(.r1, .r2).code);
+    try expectEqual(0xc7, Insn.arsh(.r1, 0).code);
+    try expectEqual(0xcf, Insn.arsh(.r1, .r2).code);
 
     // atomic instructions: might be more of these not documented in the wild
-    expect_opcode(0xdb, Insn.xadd(.r1, .r2));
+    try expectEqual(0xdb, Insn.xadd(.r1, .r2).code);
 
     // TODO: byteswap instructions
-    expect_opcode(0xd4, Insn.le(.half_word, .r1));
-    expectEqual(@intCast(i32, 16), Insn.le(.half_word, .r1).imm);
-    expect_opcode(0xd4, Insn.le(.word, .r1));
-    expectEqual(@intCast(i32, 32), Insn.le(.word, .r1).imm);
-    expect_opcode(0xd4, Insn.le(.double_word, .r1));
-    expectEqual(@intCast(i32, 64), Insn.le(.double_word, .r1).imm);
-    expect_opcode(0xdc, Insn.be(.half_word, .r1));
-    expectEqual(@intCast(i32, 16), Insn.be(.half_word, .r1).imm);
-    expect_opcode(0xdc, Insn.be(.word, .r1));
-    expectEqual(@intCast(i32, 32), Insn.be(.word, .r1).imm);
-    expect_opcode(0xdc, Insn.be(.double_word, .r1));
-    expectEqual(@intCast(i32, 64), Insn.be(.double_word, .r1).imm);
+    try expectEqual(0xd4, Insn.le(.half_word, .r1).code);
+    try expectEqual(16, Insn.le(.half_word, .r1).imm);
+    try expectEqual(0xd4, Insn.le(.word, .r1).code);
+    try expectEqual(32, Insn.le(.word, .r1).imm);
+    try expectEqual(0xd4, Insn.le(.double_word, .r1).code);
+    try expectEqual(64, Insn.le(.double_word, .r1).imm);
+    try expectEqual(0xdc, Insn.be(.half_word, .r1).code);
+    try expectEqual(16, Insn.be(.half_word, .r1).imm);
+    try expectEqual(0xdc, Insn.be(.word, .r1).code);
+    try expectEqual(32, Insn.be(.word, .r1).imm);
+    try expectEqual(0xdc, Insn.be(.double_word, .r1).code);
+    try expectEqual(64, Insn.be(.double_word, .r1).imm);
 
     // memory instructions
-    expect_opcode(0x18, Insn.ld_dw1(.r1, 0));
-    expect_opcode(0x00, Insn.ld_dw2(0));
+    try expectEqual(0x18, Insn.ld_dw1(.r1, 0).code);
+    try expectEqual(0x00, Insn.ld_dw2(0).code);
 
     //   loading a map fd
-    expect_opcode(0x18, Insn.ld_map_fd1(.r1, 0));
-    expectEqual(@intCast(u4, PSEUDO_MAP_FD), Insn.ld_map_fd1(.r1, 0).src);
-    expect_opcode(0x00, Insn.ld_map_fd2(0));
+    try expectEqual(0x18, Insn.ld_map_fd1(.r1, 0).code);
+    try expectEqual(PSEUDO_MAP_FD, Insn.ld_map_fd1(.r1, 0).src);
+    try expectEqual(0x00, Insn.ld_map_fd2(0).code);
 
-    expect_opcode(0x38, Insn.ld_abs(.double_word, .r1, .r2, 0));
-    expect_opcode(0x20, Insn.ld_abs(.word, .r1, .r2, 0));
-    expect_opcode(0x28, Insn.ld_abs(.half_word, .r1, .r2, 0));
-    expect_opcode(0x30, Insn.ld_abs(.byte, .r1, .r2, 0));
+    try expectEqual(0x38, Insn.ld_abs(.double_word, .r1, .r2, 0).code);
+    try expectEqual(0x20, Insn.ld_abs(.word, .r1, .r2, 0).code);
+    try expectEqual(0x28, Insn.ld_abs(.half_word, .r1, .r2, 0).code);
+    try expectEqual(0x30, Insn.ld_abs(.byte, .r1, .r2, 0).code);
 
-    expect_opcode(0x58, Insn.ld_ind(.double_word, .r1, .r2, 0));
-    expect_opcode(0x40, Insn.ld_ind(.word, .r1, .r2, 0));
-    expect_opcode(0x48, Insn.ld_ind(.half_word, .r1, .r2, 0));
-    expect_opcode(0x50, Insn.ld_ind(.byte, .r1, .r2, 0));
+    try expectEqual(0x58, Insn.ld_ind(.double_word, .r1, .r2, 0).code);
+    try expectEqual(0x40, Insn.ld_ind(.word, .r1, .r2, 0).code);
+    try expectEqual(0x48, Insn.ld_ind(.half_word, .r1, .r2, 0).code);
+    try expectEqual(0x50, Insn.ld_ind(.byte, .r1, .r2, 0).code);
 
-    expect_opcode(0x79, Insn.ldx(.double_word, .r1, .r2, 0));
-    expect_opcode(0x61, Insn.ldx(.word, .r1, .r2, 0));
-    expect_opcode(0x69, Insn.ldx(.half_word, .r1, .r2, 0));
-    expect_opcode(0x71, Insn.ldx(.byte, .r1, .r2, 0));
+    try expectEqual(0x79, Insn.ldx(.double_word, .r1, .r2, 0).code);
+    try expectEqual(0x61, Insn.ldx(.word, .r1, .r2, 0).code);
+    try expectEqual(0x69, Insn.ldx(.half_word, .r1, .r2, 0).code);
+    try expectEqual(0x71, Insn.ldx(.byte, .r1, .r2, 0).code);
 
-    expect_opcode(0x62, Insn.st(.word, .r1, 0, 0));
-    expect_opcode(0x6a, Insn.st(.half_word, .r1, 0, 0));
-    expect_opcode(0x72, Insn.st(.byte, .r1, 0, 0));
+    try expectEqual(0x62, Insn.st(.word, .r1, 0, 0).code);
+    try expectEqual(0x6a, Insn.st(.half_word, .r1, 0, 0).code);
+    try expectEqual(0x72, Insn.st(.byte, .r1, 0, 0).code);
 
-    expect_opcode(0x63, Insn.stx(.word, .r1, 0, .r2));
-    expect_opcode(0x6b, Insn.stx(.half_word, .r1, 0, .r2));
-    expect_opcode(0x73, Insn.stx(.byte, .r1, 0, .r2));
-    expect_opcode(0x7b, Insn.stx(.double_word, .r1, 0, .r2));
+    try expectEqual(0x63, Insn.stx(.word, .r1, 0, .r2).code);
+    try expectEqual(0x6b, Insn.stx(.half_word, .r1, 0, .r2).code);
+    try expectEqual(0x73, Insn.stx(.byte, .r1, 0, .r2).code);
+    try expectEqual(0x7b, Insn.stx(.double_word, .r1, 0, .r2).code);
 
     // branch instructions
-    expect_opcode(0x05, Insn.ja(0));
-    expect_opcode(0x15, Insn.jeq(.r1, 0, 0));
-    expect_opcode(0x1d, Insn.jeq(.r1, .r2, 0));
-    expect_opcode(0x25, Insn.jgt(.r1, 0, 0));
-    expect_opcode(0x2d, Insn.jgt(.r1, .r2, 0));
-    expect_opcode(0x35, Insn.jge(.r1, 0, 0));
-    expect_opcode(0x3d, Insn.jge(.r1, .r2, 0));
-    expect_opcode(0xa5, Insn.jlt(.r1, 0, 0));
-    expect_opcode(0xad, Insn.jlt(.r1, .r2, 0));
-    expect_opcode(0xb5, Insn.jle(.r1, 0, 0));
-    expect_opcode(0xbd, Insn.jle(.r1, .r2, 0));
-    expect_opcode(0x45, Insn.jset(.r1, 0, 0));
-    expect_opcode(0x4d, Insn.jset(.r1, .r2, 0));
-    expect_opcode(0x55, Insn.jne(.r1, 0, 0));
-    expect_opcode(0x5d, Insn.jne(.r1, .r2, 0));
-    expect_opcode(0x65, Insn.jsgt(.r1, 0, 0));
-    expect_opcode(0x6d, Insn.jsgt(.r1, .r2, 0));
-    expect_opcode(0x75, Insn.jsge(.r1, 0, 0));
-    expect_opcode(0x7d, Insn.jsge(.r1, .r2, 0));
-    expect_opcode(0xc5, Insn.jslt(.r1, 0, 0));
-    expect_opcode(0xcd, Insn.jslt(.r1, .r2, 0));
-    expect_opcode(0xd5, Insn.jsle(.r1, 0, 0));
-    expect_opcode(0xdd, Insn.jsle(.r1, .r2, 0));
-    expect_opcode(0x85, Insn.call(.unspec));
-    expect_opcode(0x95, Insn.exit());
+    try expectEqual(0x05, Insn.ja(0).code);
+    try expectEqual(0x15, Insn.jeq(.r1, 0, 0).code);
+    try expectEqual(0x1d, Insn.jeq(.r1, .r2, 0).code);
+    try expectEqual(0x25, Insn.jgt(.r1, 0, 0).code);
+    try expectEqual(0x2d, Insn.jgt(.r1, .r2, 0).code);
+    try expectEqual(0x35, Insn.jge(.r1, 0, 0).code);
+    try expectEqual(0x3d, Insn.jge(.r1, .r2, 0).code);
+    try expectEqual(0xa5, Insn.jlt(.r1, 0, 0).code);
+    try expectEqual(0xad, Insn.jlt(.r1, .r2, 0).code);
+    try expectEqual(0xb5, Insn.jle(.r1, 0, 0).code);
+    try expectEqual(0xbd, Insn.jle(.r1, .r2, 0).code);
+    try expectEqual(0x45, Insn.jset(.r1, 0, 0).code);
+    try expectEqual(0x4d, Insn.jset(.r1, .r2, 0).code);
+    try expectEqual(0x55, Insn.jne(.r1, 0, 0).code);
+    try expectEqual(0x5d, Insn.jne(.r1, .r2, 0).code);
+    try expectEqual(0x65, Insn.jsgt(.r1, 0, 0).code);
+    try expectEqual(0x6d, Insn.jsgt(.r1, .r2, 0).code);
+    try expectEqual(0x75, Insn.jsge(.r1, 0, 0).code);
+    try expectEqual(0x7d, Insn.jsge(.r1, .r2, 0).code);
+    try expectEqual(0xc5, Insn.jslt(.r1, 0, 0).code);
+    try expectEqual(0xcd, Insn.jslt(.r1, .r2, 0).code);
+    try expectEqual(0xd5, Insn.jsle(.r1, 0, 0).code);
+    try expectEqual(0xdd, Insn.jsle(.r1, .r2, 0).code);
+    try expectEqual(0x85, Insn.call(.unspec).code);
+    try expectEqual(0x95, Insn.exit().code);
 }

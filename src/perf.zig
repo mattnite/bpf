@@ -1,6 +1,5 @@
 const std = @import("std");
-usingnamespace std.os.linux;
-usingnamespace @import("ioctl.zig");
+pub const ioctl = @import("ioctl.zig");
 
 pub const COUNT_SW_BPF_OUTPUT = 10;
 pub const TYPE_SOFTWARE = 1;
@@ -10,8 +9,8 @@ pub const FLAG_FD_CLOEXEC = 1 << 3;
 pub const RECORD_LOST = 2;
 pub const RECORD_SAMPLE = 9;
 
-pub const EVENT_IOC_ENABLE = @bitCast(u32, IO('$', 0));
-pub const EVENT_IOC_DISABLE = @bitCast(u32, IO('$', 1));
+pub const EVENT_IOC_ENABLE: u32 = @bitCast(ioctl.IO('$', 0));
+pub const EVENT_IOC_DISABLE: u32 = @bitCast(ioctl.IO('$', 1));
 
 pub const EventHeader = extern struct {
     type: u32,
@@ -59,7 +58,7 @@ pub const MmapPage = extern struct {
 };
 
 test "perf.MmapPage data head offset" {
-    std.testing.expectEqual(1024, @byteOffsetOf(MmapPage, "data_head"));
+    std.testing.expectEqual(1024, @offsetOf(MmapPage, "data_head"));
 }
 
 pub const EventAttr = extern struct {

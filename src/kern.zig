@@ -1,10 +1,13 @@
 const std = @import("std");
 
-usingnamespace @import("common.zig");
+const common = @import("common.zig");
+const MapDef = common.MapDef;
+const MapType = common.MapType;
+const MapUpdateType = common.MapUpdateType;
 
-pub const helpers = @import("helpers.zig");
-pub const Tracepoint = @import("tracepoint.zig");
-pub usingnamespace @import("sections.zig");
+const helpers = @import("helpers.zig");
+const Tracepoint = @import("tracepoint.zig");
+const sections = @import("sections.zig");
 
 pub fn Map(
     comptime Key: type,
@@ -18,7 +21,7 @@ pub fn Map(
         pub fn init(map_type: MapType, max_entries: u32, flags: u32) Self {
             return Self{
                 .def = MapDef{
-                    .type = @enumToInt(map_type),
+                    .type = @intFromEnum(map_type),
                     .key_size = @sizeOf(Key),
                     .value_size = @sizeOf(Value),
                     .max_entries = max_entries,
@@ -29,7 +32,7 @@ pub fn Map(
 
         /// Perform a lookup in *map* for an entry associated to *key*.
         pub fn lookup(self: Self, key: Key) ?*Value {
-            return @ptrCast(?*Value, @alignCast(@alignOf(?*Value), helpers.map_lookup_elem(@ptrCast(*const MapDef, &self), &key)));
+            return @ptrCast(@alignCast(helpers.map_lookup_elem(@ptrCast(&self), &key)));
         }
 
         /// Add or update the value of the entry associated to `key` in `map`
@@ -44,10 +47,10 @@ pub fn Map(
         /// always exist), the helper would return an error.
         pub fn update(self: Self, update_type: MapUpdateType, key: Key, value: Value) !void {
             const rc = helpers.map_update_elem(
-                @ptrCast(*const MapDef, &self),
+                @ptrCast(&self),
                 &key,
                 &value,
-                @enumToInt(update_type),
+                @intFromEnum(update_type),
             );
             return switch (rc) {
                 0 => {},
@@ -57,7 +60,7 @@ pub fn Map(
 
         /// Delete entry with *key* from *map*.
         pub fn delete(self: Self, key: Key) !void {
-            const rc = helpers.map_delete_elem(@ptrCast(*const MapDef, &self), &key);
+            const rc = helpers.map_delete_elem(@ptrCast(&self), &key);
             return switch (rc) {
                 0 => {},
                 else => error.Unknown,
@@ -168,7 +171,7 @@ pub const PerfEventArray = struct {
     /// - Only the packet payload, or
     /// - A combination of both.
     pub fn event_output(self: Self, ctx: anytype, flags: u64, data: []u8) !void {
-        const rc = helpers.perf_event_output(ctx, @ptrCast(*const MapDef, &self), flags, data.ptr, data.len);
+        const rc = helpers.perf_event_output(ctx, @ptrCast(&self), flags, data.ptr, data.len);
         return switch (rc) {
             0 => {},
             else => error.Unknown,
@@ -192,11 +195,6 @@ pub const get_prandom_u32 = helpers.get_prandom_u32;
 /// run with preemption disabled, which means that the SMP processor id is
 /// stable during all the execution of the program.
 pub const get_smp_processor_id = helpers.get_smp_processor_id;
-
-/// Return A 64-bit integer containing the current tgid and pid, and created as
-/// such:
-/// 	*current_task*\ **->tgid << 32 \|**
-/// 	*current_task*\ **->pid**.
 pub const get_current_pid_tgid = helpers.get_current_pid_tgid;
 
 /// Return A 64-bit integer containing the current GID and UID, and created as
@@ -209,32 +207,10 @@ pub const get_current_uid_gid = helpers.get_current_uid_gid;
 /// success, the helper makes sure that the *buf* is NUL-terminated. On failure,
 /// it is filled with zeroes.
 pub fn get_current_comm(buf: []u8) !void {
-    if (helpers.get_current_comm(buf.ptr, @truncate(u32, buf.len)) < 0) {
+    if (helpers.get_current_comm(buf.ptr, @intCast(buf.len)) < 0) {
         return error.Unknown;
     }
 }
-
-/// Copy a null terminated string from an unsafe user address *unsafe_ptr* to
-/// *dst*. The *size* should include the terminating NUL byte. In case the
-/// string length is smaller than *size*, the target is not padded with further
-/// NUL bytes. If the string length is larger than *size*, just *size*-1 bytes
-/// are copied and the last byte is set to NUL.
-///
-/// On success, the length of the copied string is returned. This makes this
-/// helper useful in tracing programs for reading strings, and more importantly
-/// to get its length at runtime. See the following snippet:
-///
-/// ::
-///
-/// 	SEC("kprobe/sys_open")
-/// 	void bpf_sys_open(struct pt_regs *ctx) {
-/// 	    char buf[PATHLEN]; // PATHLEN is defined to 256
-/// 	    int res = bpf_probe_read_user_str(buf, sizeof(buf), ctx->di);
-/// 		// Consume buf, for example push it to
-/// 		// userspace via bpf_perf_event_output(); we
-/// 		// can use res (the string length) as event
-/// 		// size, after checking its boundaries.
-/// 	}
 ///
 /// In comparison, using **bpf_probe_read_user**\ () helper here instead to read
 /// the string would require to estimate the length at compile time, and would
@@ -248,11 +224,11 @@ pub fn get_current_comm(buf: []u8) !void {
 /// Return On success, the strictly positive length of the string, including the
 /// trailing NUL character. On error, a negative value.
 pub fn probe_read_user_str(dst: []u8, unsafe: [*:0]const u8) !usize {
-    const rc = helpers.probe_read_user_str(dst.ptr, @truncate(u32, dst.len), unsafe);
+    const rc = helpers.probe_read_user_str(dst.ptr, @intCast(dst.len), unsafe);
     return if (rc < 0)
         error.Unknown
     else
-        @bitCast(usize, rc);
+        @intCast(rc);
 }
 
 pub const BpfSock = opaque {};
@@ -275,7 +251,9 @@ pub const Tcp6Sock = opaque {};
 pub const TcpRequestSock = opaque {};
 pub const TcpSock = opaque {};
 pub const TcpTimewaitSock = opaque {};
+pub const TCP_Hdr = opaque {};
 pub const TunnelKey = opaque {};
 pub const Udp6Sock = opaque {};
 pub const XdpMd = opaque {};
 pub const XfrmState = opaque {};
+pub const PtRegs = opaque {};

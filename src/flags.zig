@@ -17,13 +17,6 @@ pub const B = 0x10;
 /// 64-bit
 pub const DW = 0x18;
 
-pub const IMM = 0x00;
-pub const ABS = 0x20;
-pub const IND = 0x40;
-pub const MEM = 0x60;
-pub const LEN = 0x80;
-pub const MSH = 0xa0;
-
 // alu fields
 pub const ADD = 0x00;
 pub const SUB = 0x10;
