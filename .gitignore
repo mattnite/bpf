@@ -1,2 +1,2 @@
-zig-cache
-src/probe.o
+zig-out
+.zig-cache

@@ -1,3 +1,0 @@
-language: zig
-install: sudo ./ci/zig-install.sh master
-script: zig build test
