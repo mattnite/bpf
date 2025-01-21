@@ -8,6 +8,7 @@ on:
 
 jobs:
   build_and_test:
+    name: Build and Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -25,6 +26,7 @@ jobs:
         run: zig build test
 
   crosscompile:
+    name: Crosscompile
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
