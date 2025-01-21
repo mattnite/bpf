@@ -34,10 +34,10 @@ jobs:
           macos-latest,
         ]
         target: [
-          x86_64-linux-gnu
-          x86_64-linux-musl
-          aarch64-linux-gnu
-          aarch64-linux-musl
+          x86_64-linux-gnu,
+          x86_64-linux-musl,
+          aarch64-linux-gnu,
+          aarch64-linux-musl,
         ]
     steps:
       - name: Checkout
