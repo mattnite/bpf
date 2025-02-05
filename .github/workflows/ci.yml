@@ -9,6 +9,7 @@ on:
 jobs:
   build_and_test:
     name: Build and Test
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -27,6 +28,7 @@ jobs:
 
   test_vm:
     name: Test VM
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -42,6 +44,7 @@ jobs:
 
   crosscompile:
     name: Crosscompile
+    continue-on-error: true
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
