@@ -1,4 +1,4 @@
-name: Build and Test
+name: CI
 
 on:
   push:
@@ -48,32 +48,3 @@ jobs:
 
       - name: Unit Test
         run: zig build test-vm
-
-  crosscompile:
-    name: Crosscompile
-    continue-on-error: true
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [
-          ubuntu-latest,
-          windows-latest,
-          macos-latest,
-        ]
-        target: [
-          x86_64-linux-gnu,
-          x86_64-linux-musl,
-          aarch64-linux-gnu,
-          aarch64-linux-musl,
-        ]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Zig
-        uses: goto-bus-stop/setup-zig@v2
-        with:
-          version: master
-
-      - name: Build
-        run: zig build -Dtarget=${{ matrix.target }}
