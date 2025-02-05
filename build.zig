@@ -69,6 +69,7 @@ fn add_bpf_file(
                 .little => .bpfel,
                 .big => .bpfeb,
             },
+            .os_tag = .freestanding,
         }),
         .optimize = .ReleaseSmall,
         .root_source_file = opts.path,
