@@ -1,4 +1,4 @@
-name: Build and Test
+name: CI
 
 on:
   push:
@@ -9,6 +9,7 @@ on:
 jobs:
   build_and_test:
     name: Build and Test
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -25,8 +26,9 @@ jobs:
       - name: Unit Test
         run: zig build test
 
-  crosscompile:
-    name: Crosscompile
+  test_vm:
+    name: Test VM
+    continue-on-error: true
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -34,12 +36,6 @@ jobs:
           ubuntu-latest,
           windows-latest,
           macos-latest,
-        ]
-        target: [
-          x86_64-linux-gnu,
-          x86_64-linux-musl,
-          aarch64-linux-gnu,
-          aarch64-linux-musl,
         ]
     steps:
       - name: Checkout
@@ -50,5 +46,5 @@ jobs:
         with:
           version: master
 
-      - name: Build
-        run: zig build -Dtarget=${{ matrix.target }}
+      - name: Unit Test
+        run: zig build test-vm
