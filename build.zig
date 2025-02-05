@@ -72,6 +72,7 @@ fn add_bpf_file(
                 .little => .bpfel,
                 .big => .bpfeb,
             },
+            .os_tag = .freestanding,
         }),
         .optimize = .ReleaseSmall,
         .root_source_file = opts.path,
@@ -88,7 +89,7 @@ fn add_bpf_file(
             .{
                 .format = .bin,
                 .only_section = switch (@import("builtin").os.tag) {
-                    .macos => b.fmt(".text._{s}", .{section}),
+                    .macos => b.fmt(".text.{s}", .{section}),
                     else => b.fmt(".text.{s}", .{section}),
                 },
             },

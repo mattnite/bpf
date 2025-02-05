@@ -79,7 +79,7 @@ test "return 1" {
     inline for (&.{ insn_test.el, insn_test.eb }, &.{ .little, .big }) |examples, endian| {
         const program = try insn_test.load_program(arena.allocator(), @field(examples, "return_one"));
 
-        var vm: VM = .init(arena.allocator());
+        var vm = VM.init(arena.allocator());
         try vm.load(endian, program);
 
         while (true) {

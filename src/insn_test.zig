@@ -73,7 +73,7 @@ pub const el = AssignOptions(Examples, @import("examples-el"));
 pub const eb = AssignOptions(Examples, @import("examples-eb"));
 
 fn OptionsToStruct(comptime ns: type) type {
-    const ti = @typeInfo(ns).@"struct";
+    const ti = @typeInfo(ns).Struct;
     var fields: [ti.decls.len]std.builtin.Type.StructField = undefined;
 
     inline for (ti.decls, &fields) |decl, *field| {
@@ -81,13 +81,13 @@ fn OptionsToStruct(comptime ns: type) type {
             .name = decl.name,
             .type = []const u8,
             .alignment = @alignOf([]const u8),
-            .default_value_ptr = null,
+            .default_value = null,
             .is_comptime = false,
         };
     }
 
     const t = std.builtin.Type{
-        .@"struct" = .{
+        .Struct = .{
             .backing_integer = null,
             .decls = &.{},
             .fields = &fields,
@@ -100,8 +100,8 @@ fn OptionsToStruct(comptime ns: type) type {
 }
 
 fn AssignOptions(comptime T: type, comptime ns: type) T {
-    const ti = @typeInfo(T).@"struct";
-    const ns_ti = @typeInfo(ns).@"struct";
+    const ti = @typeInfo(T).Struct;
+    const ns_ti = @typeInfo(ns).Struct;
 
     var ret: T = undefined;
     inline for (ti.fields, ns_ti.decls) |field, decl| {
