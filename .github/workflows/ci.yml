@@ -29,7 +29,14 @@ jobs:
   test_vm:
     name: Test VM
     continue-on-error: true
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [
+          ubuntu-latest,
+          windows-latest,
+          macos-latest,
+        ]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
