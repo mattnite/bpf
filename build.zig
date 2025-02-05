@@ -73,16 +73,23 @@ fn add_bpf_file(
         .optimize = .ReleaseSmall,
         .root_source_file = opts.path,
     });
+    obj.link_function_sections = true;
 
     const install = b.addInstallFile(obj.getEmittedBin(), b.fmt("{s}.elf", .{module_name}));
     b.getInstallStep().dependOn(&install.step);
 
     const options = b.addOptions();
     for (opts.sections) |section| {
-        const objcopy = b.addObjCopy(obj.getEmittedBin(), .{
-            .format = .bin,
-            .only_section = section,
-        });
+        const objcopy = b.addObjCopy(
+            obj.getEmittedBin(),
+            .{
+                .format = .bin,
+                .only_section = switch (@import("builtin").os.tag) {
+                    .macos => b.fmt(".text._{s}", .{section}),
+                    else => b.fmt(".text.{s}", .{section}),
+                },
+            },
+        );
         options.addOptionPath(section, objcopy.getOutput());
     }
 
