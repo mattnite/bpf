@@ -32,8 +32,11 @@ pub fn build(b: *std.Build) void {
 
     const run_vm_unit_tests = b.addRunArtifact(vm_unit_tests);
 
-    const test_step = b.step("test-vm", "Run unit tests");
-    test_step.dependOn(&run_vm_unit_tests.step);
+    const test_vm_step = b.step("test-vm", "Run unit tests");
+    test_vm_step.dependOn(&run_vm_unit_tests.step);
+
+    const test_step = b.step("test", "Run all tests");
+    test_step.dependOn(test_vm_step);
 }
 
 const Add_BPF_FileOptions = struct {
