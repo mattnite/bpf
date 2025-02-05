@@ -4,57 +4,87 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const lib_mod = b.createModule(.{
-        .root_source_file = b.path("src/root.zig"),
+    _ = b.addModule("user", .{
+        .root_source_file = b.path("src/user.zig"),
+    });
+
+    _ = b.addModule("kern", .{
+        .root_source_file = b.path("src/kern.zig"),
+    });
+
+    _ = b.addModule("VM", .{
+        .root_source_file = b.path("src/VM.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const exe_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+    const vm_unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/VM.zig"),
+    });
+    add_bpf_files(b, vm_unit_tests, .{
+        .name = "examples",
+        .path = b.path("src/insn/examples.bpf.zig"),
+        .sections = &.{
+            "load",
+            "return_one",
+        },
     });
 
-    exe_mod.addImport("bpf_lib", lib_mod);
+    const run_vm_unit_tests = b.addRunArtifact(vm_unit_tests);
 
-    const lib = b.addStaticLibrary(.{
-        .name = "bpf",
-        .root_module = lib_mod,
+    const test_step = b.step("test-vm", "Run unit tests");
+    test_step.dependOn(&run_vm_unit_tests.step);
+}
+
+const Add_BPF_FileOptions = struct {
+    name: []const u8,
+    path: std.Build.LazyPath,
+    sections: []const []const u8,
+};
+
+fn add_bpf_files(
+    b: *std.Build,
+    compile: *std.Build.Step.Compile,
+    opts: Add_BPF_FileOptions,
+) void {
+    add_bpf_file(b, compile, .little, opts);
+    add_bpf_file(b, compile, .big, opts);
+}
+
+fn add_bpf_file(
+    b: *std.Build,
+    compile: *std.Build.Step.Compile,
+    endian: std.builtin.Endian,
+    opts: Add_BPF_FileOptions,
+) void {
+    const module_name = b.fmt("{s}-{s}", .{ opts.name, switch (endian) {
+        .little => "el",
+        .big => "eb",
+    } });
+
+    const obj = b.addObject(.{
+        .name = module_name,
+        .target = b.resolveTargetQuery(.{
+            .cpu_arch = switch (endian) {
+                .little => .bpfel,
+                .big => .bpfeb,
+            },
+        }),
+        .optimize = .ReleaseSmall,
+        .root_source_file = opts.path,
     });
 
-    b.installArtifact(lib);
+    const install = b.addInstallFile(obj.getEmittedBin(), b.fmt("{s}.elf", .{module_name}));
+    b.getInstallStep().dependOn(&install.step);
 
-    const exe = b.addExecutable(.{
-        .name = "bpf",
-        .root_module = exe_mod,
-    });
-    b.installArtifact(exe);
-
-    const run_cmd = b.addRunArtifact(exe);
-
-    run_cmd.step.dependOn(b.getInstallStep());
-
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
+    const options = b.addOptions();
+    for (opts.sections) |section| {
+        const objcopy = b.addObjCopy(obj.getEmittedBin(), .{
+            .format = .bin,
+            .only_section = section,
+        });
+        options.addOptionPath(section, objcopy.getOutput());
     }
 
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
-
-    const lib_unit_tests = b.addTest(.{
-        .root_module = lib_mod,
-    });
-
-    const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
-
-    const exe_unit_tests = b.addTest(.{
-        .root_module = exe_mod,
-    });
-
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
-
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_lib_unit_tests.step);
-    test_step.dependOn(&run_exe_unit_tests.step);
+    compile.root_module.addOptions(module_name, options);
 }
