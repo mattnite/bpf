@@ -70,6 +70,66 @@ pub const Instruction = packed struct(u64) {
         else
             @byteSwap(value);
     }
+
+    pub fn disassemble(instruction: *const Instruction, writer: anytype) !void {
+        errdefer {
+            var buf: [4096]u8 = undefined;
+            const message = std.fmt.bufPrint(&buf, "Failed to disassemble instruction: {}", .{instruction}) catch unreachable;
+            @panic(message);
+        }
+
+        switch (instruction.opcode.class) {
+            .LD,
+            .LDX,
+            .ST,
+            .STX,
+            .ALU,
+            .JMP,
+            .JMP32,
+            => return error.TODO,
+            .ALU64 => switch (instruction.opcode.specific.arithmetic.source) {
+                .X => return error.TODO,
+                .K => switch (instruction.opcode.specific.arithmetic.code) {
+                    .MOV => try writer.print("r{} = {}", .{ instruction.regs.dst, instruction.imm }),
+                    else => return error.TODO,
+                },
+            },
+        }
+    }
+
+    pub fn format(
+        instruction: Instruction,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try writer.print("class={}", .{instruction.opcode.class});
+        switch (instruction.opcode.class) {
+            .LD, .LDX, .ST, .STX => {
+                const l = instruction.opcode.specific.load_and_store;
+                try writer.print(" sz={} mode={}", .{ l.sz, l.mode });
+            },
+            .ALU, .ALU64 => {
+                const a = instruction.opcode.specific.arithmetic;
+                try writer.print(" source={} code={}", .{ a.source, a.code });
+            },
+            .JMP => {
+                const j = instruction.opcode.specific.jump;
+                try writer.print(" source={} code={}", .{ j.source, j.code });
+            },
+            .JMP32 => {
+                const j = instruction.opcode.specific.jump;
+                try writer.print(" source={} code={}", .{ j.source, j.code });
+            },
+        }
+
+        try writer.print(" dst_reg={} src_reg={} offset=0x{X} imm={}", .{
+            instruction.regs.dst,
+            instruction.regs.src,
+            instruction.offset,
+            instruction.imm,
+        });
+    }
 };
 
 pub const LoadStoreSize = enum(u2) {
@@ -179,32 +239,32 @@ pub const JumpCode = enum(u4) {
 
 pub const Jump32Code =
     enum(u4) {
-    /// PC += imm
-    JA = 0x0,
-    /// PC += offset if dst == src
-    JEQ = 0x1,
-    /// PC += offset if dst > src
-    JGT = 0x2,
-    /// PC += offset if dst >= src
-    JGE = 0x3,
-    /// PC += offset if dst & src
-    JSET = 0x4,
-    /// PC += offset if dst != src
-    JNE = 0x5,
-    /// PC += offset if dst > src
-    JSGT = 0x6,
-    /// PC += offset if dst >= src
-    JSGE = 0x7,
-    /// PC += offset if dst < src
-    JLT = 0xA,
-    /// PC += offset if dst <= src
-    JLE = 0xB,
-    /// PC += offset if dst < src
-    JSLT = 0xC,
-    /// PC += offset if dst <= src
-    JSLE = 0xD,
-    _,
-};
+        /// PC += imm
+        JA = 0x0,
+        /// PC += offset if dst == src
+        JEQ = 0x1,
+        /// PC += offset if dst > src
+        JGT = 0x2,
+        /// PC += offset if dst >= src
+        JGE = 0x3,
+        /// PC += offset if dst & src
+        JSET = 0x4,
+        /// PC += offset if dst != src
+        JNE = 0x5,
+        /// PC += offset if dst > src
+        JSGT = 0x6,
+        /// PC += offset if dst >= src
+        JSGE = 0x7,
+        /// PC += offset if dst < src
+        JLT = 0xA,
+        /// PC += offset if dst <= src
+        JLE = 0xB,
+        /// PC += offset if dst < src
+        JSLT = 0xC,
+        /// PC += offset if dst <= src
+        JSLE = 0xD,
+        _,
+    };
 
 pub const ArithmeticCode = enum(u4) {
     /// dst += src

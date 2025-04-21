@@ -18,7 +18,7 @@ jobs:
       - name: Setup Zig
         uses: goto-bus-stop/setup-zig@v2
         with:
-          version: master
+          version: 0.14.0
 
       - name: Build
         run: zig build
@@ -44,7 +44,7 @@ jobs:
       - name: Setup Zig
         uses: goto-bus-stop/setup-zig@v2
         with:
-          version: master
+          version: 0.14.0
 
       - name: Unit Test
         run: zig build test-vm

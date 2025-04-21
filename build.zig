@@ -12,15 +12,16 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/kern.zig"),
     });
 
-    _ = b.addModule("VM", .{
+    const emulator_mod = b.addModule("VM", .{
         .root_source_file = b.path("src/VM.zig"),
         .target = target,
         .optimize = optimize,
     });
 
     const vm_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/VM.zig"),
+        .root_module = emulator_mod,
     });
+
     add_bpf_files(b, vm_unit_tests, .{
         .name = "examples",
         .path = b.path("src/insn/examples.bpf.zig"),
@@ -31,7 +32,6 @@ pub fn build(b: *std.Build) void {
     });
 
     const run_vm_unit_tests = b.addRunArtifact(vm_unit_tests);
-
     const test_vm_step = b.step("test-vm", "Run unit tests");
     test_vm_step.dependOn(&run_vm_unit_tests.step);
 
@@ -72,6 +72,7 @@ fn add_bpf_file(
                 .little => .bpfel,
                 .big => .bpfeb,
             },
+            .os_tag = .freestanding,
         }),
         .optimize = .ReleaseSmall,
         .root_source_file = opts.path,
@@ -88,7 +89,7 @@ fn add_bpf_file(
             .{
                 .format = .bin,
                 .only_section = switch (@import("builtin").os.tag) {
-                    .macos => b.fmt(".text._{s}", .{section}),
+                    .macos => b.fmt(".text.{s}", .{section}),
                     else => b.fmt(".text.{s}", .{section}),
                 },
             },
