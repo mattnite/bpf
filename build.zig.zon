@@ -1,6 +1,7 @@
 .{
-    .name = "bpf",
+    .name = .bpf,
     .version = "0.0.0",
+    .fingerprint = 0x3ffc7bc7c8582a78,
     .paths = .{
         "LICENSE",
         "README.md",

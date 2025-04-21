@@ -15,7 +15,37 @@ test "serialization" {
     });
 }
 
-fn instruction_test(comptime program_name: []const u8, expected: insn.Instruction) !void {
+test "disassemble.alu64.k.mov" {
+    try disassemble_test(
+        \\r3 = 1
+    , .{
+        .opcode = .{
+            .class = .ALU64,
+            .specific = .{
+                .arithmetic = .{
+                    .source = .K,
+                    .code = .MOV,
+                },
+            },
+        },
+        .regs = .{
+            .src = 0,
+            .dst = 3,
+        },
+        .offset = 0,
+        .imm = 1,
+    });
+}
+
+fn disassemble_test(expected: []const u8, insn: Instruction) !void {
+    var out = std.ArrayList(u8).init(std.testing.allocator);
+    defer out.deinit();
+
+    try insn.disassemble(out.writer());
+    try std.testing.expectEqualStrings(expected, out.items);
+}
+
+fn instruction_test(comptime program_name: []const u8, expected: Instruction) !void {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
@@ -23,7 +53,7 @@ fn instruction_test(comptime program_name: []const u8, expected: insn.Instructio
         const program = try load_program(arena.allocator(), @field(examples, program_name));
         try std.testing.expectEqual(1, program.len);
 
-        expect_instruction(expected, insn.Instruction.parse(endian, program[0])) catch |err| {
+        expect_instruction(expected, Instruction.parse(endian, program[0])) catch |err| {
             if (endian == .little)
                 std.log.err("Little endian failed", .{})
             else
@@ -38,7 +68,7 @@ fn instruction_test(comptime program_name: []const u8, expected: insn.Instructio
 
 const expect_equal = std.testing.expectEqual;
 
-fn expect_instruction(expected: insn.Instruction, actual: insn.Instruction) !void {
+fn expect_instruction(expected: Instruction, actual: Instruction) !void {
     try expect_equal(expected.opcode.class, actual.opcode.class);
     switch (expected.opcode.class) {
         .ALU, .ALU64 => {
@@ -66,14 +96,14 @@ fn expect_instruction(expected: insn.Instruction, actual: insn.Instruction) !voi
 }
 
 const std = @import("std");
-const insn = @import("insn.zig");
+const Instruction = @import("insn.zig").Instruction;
 
 const Examples = OptionsToStruct(@import("examples-el"));
 pub const el = AssignOptions(Examples, @import("examples-el"));
 pub const eb = AssignOptions(Examples, @import("examples-eb"));
 
 fn OptionsToStruct(comptime ns: type) type {
-    const ti = @typeInfo(ns).Struct;
+    const ti = @typeInfo(ns).@"struct";
     var fields: [ti.decls.len]std.builtin.Type.StructField = undefined;
 
     inline for (ti.decls, &fields) |decl, *field| {
@@ -81,13 +111,13 @@ fn OptionsToStruct(comptime ns: type) type {
             .name = decl.name,
             .type = []const u8,
             .alignment = @alignOf([]const u8),
-            .default_value = null,
+            .default_value_ptr = null,
             .is_comptime = false,
         };
     }
 
     const t = std.builtin.Type{
-        .Struct = .{
+        .@"struct" = .{
             .backing_integer = null,
             .decls = &.{},
             .fields = &fields,
@@ -100,8 +130,8 @@ fn OptionsToStruct(comptime ns: type) type {
 }
 
 fn AssignOptions(comptime T: type, comptime ns: type) T {
-    const ti = @typeInfo(T).Struct;
-    const ns_ti = @typeInfo(ns).Struct;
+    const ti = @typeInfo(T).@"struct";
+    const ns_ti = @typeInfo(ns).@"struct";
 
     var ret: T = undefined;
     inline for (ti.fields, ns_ti.decls) |field, decl| {
